@@ -29,7 +29,9 @@ func (r *UserRepository) Migrate(ctx context.Context) error {
 			role          TEXT NOT NULL DEFAULT 'ROLE_USER',
 			user_type     TEXT NOT NULL DEFAULT 'CUSTOMER',
 			avatar        TEXT NOT NULL DEFAULT '',
+			nik           TEXT NOT NULL DEFAULT '',
 			birth_date    TEXT NOT NULL DEFAULT '',
+			gender        TEXT NOT NULL DEFAULT '',
 			ktp_photo     TEXT NOT NULL DEFAULT '',
 			latitude      DOUBLE PRECISION,
 			longitude     DOUBLE PRECISION,
@@ -40,21 +42,29 @@ func (r *UserRepository) Migrate(ctx context.Context) error {
 		return err
 	}
 	// Add columns for existing deployments (idempotent)
+	r.db.Exec(ctx, `ALTER TABLE users ADD COLUMN IF NOT EXISTS nik        TEXT NOT NULL DEFAULT ''`)
 	r.db.Exec(ctx, `ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT NOT NULL DEFAULT ''`)
+	r.db.Exec(ctx, `ALTER TABLE users ADD COLUMN IF NOT EXISTS gender     TEXT NOT NULL DEFAULT ''`)
 	r.db.Exec(ctx, `ALTER TABLE users ADD COLUMN IF NOT EXISTS ktp_photo  TEXT NOT NULL DEFAULT ''`)
+	// Partial unique index: NIK must be unique when non-empty
+	r.db.Exec(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nik ON users(nik) WHERE nik <> ''`)
 	return nil
 }
 
 func (r *UserRepository) Create(ctx context.Context, u *model.User) error {
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO users (name, email, password_hash, phone, role, user_type, birth_date, ktp_photo, latitude, longitude)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO users (name, email, password_hash, phone, role, user_type, nik, birth_date, gender, ktp_photo, latitude, longitude)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, created_at
 	`, u.Name, u.Email, u.PasswordHash, u.Phone, u.Role, u.UserType,
-		u.BirthDate, u.KTPPhoto, u.Latitude, u.Longitude).
+		u.NIK, u.BirthDate, u.Gender, u.KTPPhoto, u.Latitude, u.Longitude).
 		Scan(&u.ID, &u.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
+			msg := err.Error()
+			if contains(msg, "idx_users_nik") || contains(msg, "users_nik") {
+				return fmt.Errorf("NIK sudah terdaftar")
+			}
 			return fmt.Errorf("email sudah terdaftar")
 		}
 		return err
@@ -65,12 +75,12 @@ func (r *UserRepository) Create(ctx context.Context, u *model.User) error {
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, name, email, password_hash, phone, role, user_type, avatar, birth_date, ktp_photo, latitude, longitude, created_at
+		SELECT id, name, email, password_hash, phone, role, user_type, avatar, nik, birth_date, gender, ktp_photo, latitude, longitude, created_at
 		FROM users WHERE email = $1
 	`, email).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash,
 		&u.Phone, &u.Role, &u.UserType, &u.Avatar,
-		&u.BirthDate, &u.KTPPhoto,
+		&u.NIK, &u.BirthDate, &u.Gender, &u.KTPPhoto,
 		&u.Latitude, &u.Longitude, &u.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -82,12 +92,12 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*model.User, error) {
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, name, email, password_hash, phone, role, user_type, avatar, birth_date, ktp_photo, latitude, longitude, created_at
+		SELECT id, name, email, password_hash, phone, role, user_type, avatar, nik, birth_date, gender, ktp_photo, latitude, longitude, created_at
 		FROM users WHERE id = $1
 	`, id).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash,
 		&u.Phone, &u.Role, &u.UserType, &u.Avatar,
-		&u.BirthDate, &u.KTPPhoto,
+		&u.NIK, &u.BirthDate, &u.Gender, &u.KTPPhoto,
 		&u.Latitude, &u.Longitude, &u.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

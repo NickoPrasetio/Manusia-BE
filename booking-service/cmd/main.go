@@ -25,10 +25,16 @@ func main() {
 
 	repo := repository.NewBookingRepository(db)
 	if err := repo.Migrate(context.Background()); err != nil {
-		log.Fatalf("migrate: %v", err)
+		log.Fatalf("migrate bookings: %v", err)
+	}
+
+	jobRepo := repository.NewJobRepository(db)
+	if err := jobRepo.Migrate(context.Background()); err != nil {
+		log.Fatalf("migrate jobs: %v", err)
 	}
 
 	h := handler.NewBookingHandler(db)
+	jh := handler.NewJobHandler(db)
 	jwtMiddleware := middleware.JWTAuth([]byte(cfg.JWTSecret))
 
 	r := gin.Default()
@@ -49,6 +55,7 @@ func main() {
 		api.GET("/server-time", func(c *gin.Context) { // public enough — still needs auth
 			h.ServerTime(c)
 		})
+		api.GET("/open-nearby", h.GetOpenNearby)
 		api.POST("", h.Create)
 		api.GET("/my", h.GetMy)
 		api.GET("/my-orders", h.GetMyOrders)
@@ -58,11 +65,23 @@ func main() {
 		api.PATCH("/:id/cancel", h.Cancel)
 	}
 
+	// Job routes
+	jobs := r.Group("/api/jobs")
+	jobs.Use(jwtMiddleware)
+	{
+		jobs.GET("/nearby", jh.GetNearby)
+		jobs.POST("", jh.Create)
+		jobs.GET("/my", jh.GetMy)
+		jobs.GET("/:id", jh.GetByID)
+		jobs.PATCH("/:id/close", jh.Close)
+	}
+
 	log.Printf("booking-service listening on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// ensure repo is used
+// ensure repos are used
 var _ = (*repository.BookingRepository)(nil)
+var _ = (*repository.JobRepository)(nil)

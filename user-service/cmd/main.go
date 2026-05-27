@@ -81,6 +81,7 @@ func main() {
 				}
 				c.JSON(http.StatusOK, p)
 			})
+			protected.PATCH("/users/me/availability", h.UpdateMyAvailability)
 		}
 	}
 

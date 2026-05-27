@@ -110,6 +110,10 @@ func (s *UserService) UploadPhotoBytes(ctx context.Context, id string, data []by
 	return s.repo.FindByID(ctx, id)
 }
 
+func (s *UserService) UpdateAvailability(ctx context.Context, authID string, isAvailable bool, lat, lon *float64) (*model.UserProfile, error) {
+	return s.repo.UpdateAvailabilityByAuthID(ctx, authID, isAvailable, lat, lon)
+}
+
 func (s *UserService) UpdateRating(ctx context.Context, authID string, rating float64, totalReviews int) error {
 	return s.repo.UpdateRating(ctx, authID, rating, totalReviews)
 }

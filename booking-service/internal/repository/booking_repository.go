@@ -99,6 +99,33 @@ func (r *BookingRepository) UpdateStatus(ctx context.Context, id string, status 
 	return err
 }
 
+// FindOpenNearby returns PENDING bookings within radiusKm of the given coordinates,
+// ordered by distance ascending. Uses the Haversine formula.
+func (r *BookingRepository) FindOpenNearby(ctx context.Context, lat, lon, radiusKm float64) ([]model.Booking, error) {
+	const haversine = `(6371 * acos(LEAST(1.0,
+		cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
+		sin(radians($1)) * sin(radians(latitude))
+	)))`
+	query := fmt.Sprintf(`
+		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name,
+		       address, city, latitude, longitude, booking_date, start_time, duration_days,
+		       payment_method, status, notes, created_at
+		FROM bookings
+		WHERE status = 'PENDING'
+		  AND latitude  <> 0 AND longitude <> 0
+		  AND %s <= $3
+		ORDER BY %s ASC
+		LIMIT 50
+	`, haversine, haversine)
+
+	rows, err := r.db.Query(ctx, query, lat, lon, radiusKm)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanBookings(rows)
+}
+
 func scanBookings(rows pgx.Rows) ([]model.Booking, error) {
 	var result []model.Booking
 	for rows.Next() {

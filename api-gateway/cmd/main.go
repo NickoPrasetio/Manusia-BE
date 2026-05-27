@@ -42,8 +42,20 @@ func main() {
 		{"/api/users", userURL},
 		{"/api/workers", userURL},
 		{"/api/bookings", bookingURL},
+		{"/api/jobs", bookingURL},
 		{"/api/reviews", reviewURL},
 		{"/api/internal", userURL},
+	}
+
+	// CORS headers that upstream services may send — strip them so the
+	// gateway's own CORS middleware is the single source of truth.
+	corsHeaders := []string{
+		"Access-Control-Allow-Origin",
+		"Access-Control-Allow-Methods",
+		"Access-Control-Allow-Headers",
+		"Access-Control-Expose-Headers",
+		"Access-Control-Allow-Credentials",
+		"Access-Control-Max-Age",
 	}
 
 	r.NoRoute(func(c *gin.Context) {
@@ -52,6 +64,15 @@ func main() {
 		for _, route := range routes {
 			if strings.HasPrefix(path, route.prefix) {
 				proxy := httputil.NewSingleHostReverseProxy(route.target)
+
+				// Strip upstream CORS headers to avoid duplicates
+				proxy.ModifyResponse = func(resp *http.Response) error {
+					for _, h := range corsHeaders {
+						resp.Header.Del(h)
+					}
+					return nil
+				}
+
 				proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 					log.Printf("proxy error [%s]: %v", path, err)
 					w.Header().Set("Content-Type", "application/json")

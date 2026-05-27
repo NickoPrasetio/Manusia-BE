@@ -132,6 +132,27 @@ func (h *UserHandler) UploadPhoto(c *gin.Context) {
 	c.JSON(http.StatusOK, p)
 }
 
+// UpdateMyAvailability toggles the authenticated worker's open-for-work status.
+// Body: { "isAvailable": bool, "latitude": float64 (optional), "longitude": float64 (optional) }
+func (h *UserHandler) UpdateMyAvailability(c *gin.Context) {
+	authID := c.GetString("userID")
+	var body struct {
+		IsAvailable bool     `json:"isAvailable"`
+		Latitude    *float64 `json:"latitude"`
+		Longitude   *float64 `json:"longitude"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	p, err := h.svc.UpdateAvailability(c.Request.Context(), authID, body.IsAvailable, body.Latitude, body.Longitude)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
 // UpdateRating is called internally (e.g., from review-service via HTTP or Kafka consumer)
 func (h *UserHandler) UpdateRating(c *gin.Context) {
 	authID := c.Param("authId")

@@ -52,6 +52,8 @@ type UserProfile struct {
 	IsAvailable     bool       `db:"is_available"     json:"isAvailable"`
 	WorkStatus      WorkStatus `db:"work_status"      json:"workStatus"`
 	Bio             string     `db:"bio"              json:"bio"`
+	Latitude        *float64   `db:"latitude"         json:"latitude,omitempty"`
+	Longitude       *float64   `db:"longitude"        json:"longitude,omitempty"`
 	CreatedAt       time.Time  `db:"created_at"       json:"createdAt"`
 }
 

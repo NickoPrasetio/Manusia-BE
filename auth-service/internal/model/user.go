@@ -20,7 +20,9 @@ type User struct {
 	Role         string    `db:"role"          json:"role"`
 	UserType     UserType  `db:"user_type"     json:"userType"`
 	Avatar       string    `db:"avatar"        json:"avatar"`
+	NIK          string    `db:"nik"           json:"nik"`
 	BirthDate    string    `db:"birth_date"    json:"birthDate"`
+	Gender       string    `db:"gender"        json:"gender"`
 	KTPPhoto     string    `db:"ktp_photo"     json:"ktpPhoto"`
 	Latitude     *float64  `db:"latitude"      json:"latitude,omitempty"`
 	Longitude    *float64  `db:"longitude"     json:"longitude,omitempty"`
@@ -34,7 +36,9 @@ type RegisterRequest struct {
 	Password  string   `form:"password"`
 	Phone     string   `form:"phone"`
 	UserType  UserType `form:"userType"`
+	NIK       string   `form:"nik"`
 	BirthDate string   `form:"birthDate"`
+	Gender    string   `form:"gender"`
 	Latitude  *float64 `form:"latitude"`
 	Longitude *float64 `form:"longitude"`
 	KTPPhoto  string   // set by handler after upload
@@ -56,7 +60,9 @@ type AuthResponse struct {
 	Role      string   `json:"role"`
 	UserType  UserType `json:"userType"`
 	Avatar    string   `json:"avatar"`
+	NIK       string   `json:"nik"`
 	BirthDate string   `json:"birthDate"`
+	Gender    string   `json:"gender"`
 	KTPPhoto  string   `json:"ktpPhoto"`
 	Latitude  *float64 `json:"latitude,omitempty"`
 	Longitude *float64 `json:"longitude,omitempty"`

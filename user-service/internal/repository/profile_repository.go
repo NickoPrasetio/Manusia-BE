@@ -21,7 +21,7 @@ func NewProfileRepository(db *pgxpool.Pool) *ProfileRepository {
 }
 
 func (r *ProfileRepository) Migrate(ctx context.Context) error {
-	_, err := r.db.Exec(ctx, `
+	if _, err := r.db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS user_profiles (
 			id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			auth_id          TEXT UNIQUE NOT NULL,
@@ -39,8 +39,19 @@ func (r *ProfileRepository) Migrate(ctx context.Context) error {
 			bio              TEXT NOT NULL DEFAULT '',
 			created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
-	`)
-	return err
+	`); err != nil {
+		return err
+	}
+	// Idempotent: add lat/lon columns for existing deployments
+	for _, col := range []string{
+		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS latitude  DOUBLE PRECISION`,
+		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`,
+	} {
+		if _, err := r.db.Exec(ctx, col); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *ProfileRepository) Create(ctx context.Context, p *model.UserProfile) error {
@@ -154,6 +165,42 @@ func (r *ProfileRepository) Update(ctx context.Context, id string, req *model.Up
 	return err
 }
 
+// UpdateAvailabilityByAuthID sets is_available + work_status (and optionally lat/lon) for the
+// given auth user. Uses UPSERT so the first toggle creates a minimal profile row when one
+// doesn't yet exist. Lat/lon are only written when non-nil; existing values are preserved.
+func (r *ProfileRepository) UpdateAvailabilityByAuthID(ctx context.Context, authID string, isAvailable bool, lat, lon *float64) (*model.UserProfile, error) {
+	workStatus := "CLOSED"
+	if isAvailable {
+		workStatus = "OPEN"
+	}
+	var p model.UserProfile
+	var specsJSON []byte
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO user_profiles (auth_id, is_available, work_status, latitude, longitude)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (auth_id) DO UPDATE SET
+			is_available = EXCLUDED.is_available,
+			work_status  = EXCLUDED.work_status,
+			latitude     = COALESCE(EXCLUDED.latitude,  user_profiles.latitude),
+			longitude    = COALESCE(EXCLUDED.longitude, user_profiles.longitude)
+		RETURNING id, auth_id, name, avatar, age, experience, rating, total_reviews,
+		          specializations, location, price_per_day, is_available, work_status,
+		          bio, latitude, longitude, created_at
+	`, authID, isAvailable, workStatus, lat, lon).Scan(
+		&p.ID, &p.AuthID, &p.Name, &p.Avatar, &p.Age, &p.Experience,
+		&p.Rating, &p.TotalReviews, &specsJSON, &p.Location,
+		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude, &p.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_ = json.Unmarshal(specsJSON, &p.Specializations)
+	if p.Specializations == nil {
+		p.Specializations = []string{}
+	}
+	return &p, nil
+}
+
 func (r *ProfileRepository) UpdateAvatar(ctx context.Context, id, avatarURL string) error {
 	_, err := r.db.Exec(ctx, `UPDATE user_profiles SET avatar=$1 WHERE id=$2`, avatarURL, id)
 	return err
@@ -167,7 +214,7 @@ func (r *ProfileRepository) UpdateRating(ctx context.Context, authID string, rat
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func baseSelect() string {
-	return `SELECT id, auth_id, name, avatar, age, experience, rating, total_reviews, specializations, location, price_per_day, is_available, work_status, bio, created_at FROM user_profiles`
+	return `SELECT id, auth_id, name, avatar, age, experience, rating, total_reviews, specializations, location, price_per_day, is_available, work_status, bio, latitude, longitude, created_at FROM user_profiles`
 }
 
 func buildFilters(q *string, search string, available *bool, startIdx int) ([]interface{}, int) {
@@ -219,7 +266,7 @@ func (r *ProfileRepository) scanOne(ctx context.Context, q string, arg interface
 	err := r.db.QueryRow(ctx, q, arg).Scan(
 		&p.ID, &p.AuthID, &p.Name, &p.Avatar, &p.Age, &p.Experience,
 		&p.Rating, &p.TotalReviews, &specsJSON, &p.Location,
-		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.CreatedAt,
+		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude, &p.CreatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -242,7 +289,7 @@ func scanRows(rows pgx.Rows) ([]model.UserProfile, error) {
 		err := rows.Scan(
 			&p.ID, &p.AuthID, &p.Name, &p.Avatar, &p.Age, &p.Experience,
 			&p.Rating, &p.TotalReviews, &specsJSON, &p.Location,
-			&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.CreatedAt,
+			&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude, &p.CreatedAt,
 		)
 		if err != nil {
 			return nil, err

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -140,6 +141,32 @@ func (h *BookingHandler) Cancel(c *gin.Context) {
 	}
 	b.Status = model.StatusCancelled
 	c.JSON(http.StatusOK, b)
+}
+
+// GetOpenNearby returns PENDING bookings near the given lat/lon.
+// Query params: lat, lon (required), radius (km, default 25)
+func (h *BookingHandler) GetOpenNearby(c *gin.Context) {
+	lat, err1 := strconv.ParseFloat(c.Query("lat"), 64)
+	lon, err2 := strconv.ParseFloat(c.Query("lon"), 64)
+	if err1 != nil || err2 != nil || lat == 0 || lon == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "query param lat dan lon wajib"})
+		return
+	}
+	radius := 25.0
+	if rv := c.Query("radius"); rv != "" {
+		if v, err := strconv.ParseFloat(rv, 64); err == nil && v > 0 {
+			radius = v
+		}
+	}
+	bookings, err := h.repo.FindOpenNearby(c.Request.Context(), lat, lon, radius)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if bookings == nil {
+		bookings = []model.Booking{}
+	}
+	c.JSON(http.StatusOK, bookings)
 }
 
 func (h *BookingHandler) ServerTime(c *gin.Context) {

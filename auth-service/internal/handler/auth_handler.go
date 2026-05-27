@@ -72,7 +72,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Password:  c.PostForm("password"),
 		Phone:     strings.TrimSpace(c.PostForm("phone")),
 		UserType:  model.UserType(c.PostForm("userType")),
+		NIK:       c.PostForm("nik"),
 		BirthDate: c.PostForm("birthDate"),
+		Gender:    c.PostForm("gender"),
 	}
 
 	// Validate required fields
