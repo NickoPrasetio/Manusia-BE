@@ -1,0 +1,35 @@
+# Compiled binaries
+server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output per-service
+*/server
+
+# Test binary
+*.test
+
+# Go module cache / vendor
+vendor/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker override files (keep docker-compose.yml, ignore local overrides)
+docker-compose.override.yml
+docker-compose.local.yml
