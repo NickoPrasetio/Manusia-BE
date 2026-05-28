@@ -33,6 +33,15 @@ type Job struct {
 	CreatedAt    time.Time   `db:"created_at"     json:"createdAt"`
 }
 
+// NearbyJobsResponse adalah response paginated untuk GET /api/jobs/nearby
+type NearbyJobsResponse struct {
+	Jobs    []Job `json:"jobs"`
+	Total   int64 `json:"total"`
+	Page    int   `json:"page"`
+	Limit   int   `json:"limit"`
+	HasMore bool  `json:"hasMore"`
+}
+
 type CreateJobRequest struct {
 	CustomerName string      `json:"customerName" binding:"required"`
 	Title        string      `json:"title"        binding:"required"`

@@ -103,12 +103,14 @@ func (h *JobHandler) Close(c *gin.Context) {
 	c.JSON(http.StatusOK, j)
 }
 
-// GET /api/jobs/nearby?lat=&lon=&radius=&category=
-// Worker melihat job terbuka di sekitar lokasinya.
+// GET /api/jobs/nearby?lat=&lon=&radius=&category=&page=&limit=
+// Worker melihat job terbuka di sekitar lokasinya (paginated).
 // Query params:
 //   lat, lon  — wajib (koordinat worker)
 //   radius    — opsional, km (default 50)
 //   category  — opsional: TASK | PROJECT | EVENT (kosong = semua)
+//   page      — opsional, 1-based (default 1)
+//   limit     — opsional, 1–50 (default 10)
 func (h *JobHandler) GetNearby(c *gin.Context) {
 	lat, err1 := strconv.ParseFloat(c.Query("lat"), 64)
 	lon, err2 := strconv.ParseFloat(c.Query("lon"), 64)
@@ -124,9 +126,25 @@ func (h *JobHandler) GetNearby(c *gin.Context) {
 		}
 	}
 
-	category := c.Query("category") // e.g. "TASK", "PROJECT", "EVENT", or ""
+	category := c.Query("category")
 
-	jobs, err := h.repo.FindNearby(c.Request.Context(), lat, lon, radius, category)
+	page := 1
+	if pv := c.Query("page"); pv != "" {
+		if v, err := strconv.Atoi(pv); err == nil && v > 0 {
+			page = v
+		}
+	}
+
+	limit := 10
+	if lv := c.Query("limit"); lv != "" {
+		if v, err := strconv.Atoi(lv); err == nil && v > 0 && v <= 50 {
+			limit = v
+		}
+	}
+
+	offset := (page - 1) * limit
+
+	jobs, total, err := h.repo.FindNearby(c.Request.Context(), lat, lon, radius, category, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -134,5 +152,12 @@ func (h *JobHandler) GetNearby(c *gin.Context) {
 	if jobs == nil {
 		jobs = []model.Job{}
 	}
-	c.JSON(http.StatusOK, jobs)
+
+	c.JSON(http.StatusOK, model.NearbyJobsResponse{
+		Jobs:    jobs,
+		Total:   total,
+		Page:    page,
+		Limit:   limit,
+		HasMore: int64(offset+len(jobs)) < total,
+	})
 }

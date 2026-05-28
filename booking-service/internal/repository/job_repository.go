@@ -136,47 +136,77 @@ func (r *JobRepository) UpdateStatus(ctx context.Context, id string, status mode
 	return err
 }
 
-// FindNearby returns OPEN jobs within radiusKm of (lat,lon).
+// FindNearby returns paginated OPEN jobs within radiusKm of (lat,lon).
 // Optionally filtered by category (empty string = all categories).
-// Results ordered by distance ASC, limited to 50.
-func (r *JobRepository) FindNearby(ctx context.Context, lat, lon, radiusKm float64, category string) ([]model.Job, error) {
+// Returns (jobs, totalCount, error).  totalCount is computed via COUNT(*) OVER()
+// so no second round-trip is needed.
+func (r *JobRepository) FindNearby(
+	ctx context.Context,
+	lat, lon, radiusKm float64,
+	category string,
+	limit, offset int,
+) ([]model.Job, int64, error) {
 	const haversine = `(6371 * acos(LEAST(1.0,
 		cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
 		sin(radians($1)) * sin(radians(latitude))
 	)))`
 
-	var query string
-	var args []any
+	var (
+		queryStr string
+		args     []any
+	)
 
 	if category != "" {
-		query = fmt.Sprintf(`
-			SELECT `+jobCols+`
+		queryStr = fmt.Sprintf(`
+			SELECT `+jobCols+`, COUNT(*) OVER() AS total_count
 			FROM jobs
-			WHERE status    = 'OPEN'
+			WHERE status   = 'OPEN'
 			  AND latitude  <> 0 AND longitude <> 0
 			  AND category  = $4
 			  AND %s <= $3
-			ORDER BY %s ASC
-			LIMIT 50
+			ORDER BY %s ASC, created_at DESC, id ASC
+			LIMIT $5 OFFSET $6
 		`, haversine, haversine)
-		args = []any{lat, lon, radiusKm, category}
+		args = []any{lat, lon, radiusKm, category, limit, offset}
 	} else {
-		query = fmt.Sprintf(`
-			SELECT `+jobCols+`
+		queryStr = fmt.Sprintf(`
+			SELECT `+jobCols+`, COUNT(*) OVER() AS total_count
 			FROM jobs
 			WHERE status   = 'OPEN'
 			  AND latitude  <> 0 AND longitude <> 0
 			  AND %s <= $3
-			ORDER BY %s ASC
-			LIMIT 50
+			ORDER BY %s ASC, created_at DESC, id ASC
+			LIMIT $4 OFFSET $5
 		`, haversine, haversine)
-		args = []any{lat, lon, radiusKm}
+		args = []any{lat, lon, radiusKm, limit, offset}
 	}
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.db.Query(ctx, queryStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
-	return scanJobs(rows)
+
+	var jobs []model.Job
+	var total int64
+	for rows.Next() {
+		var j model.Job
+		var todoJSON []byte
+		if err := rows.Scan(
+			&j.ID, &j.CustomerID, &j.CustomerName,
+			&j.Title, &j.Description, &j.BudgetPerDay,
+			&todoJSON, &j.DurationDays,
+			&j.City, &j.Latitude, &j.Longitude,
+			&j.Category, &j.Status, &j.CreatedAt,
+			&total, // COUNT(*) OVER()
+		); err != nil {
+			return nil, 0, err
+		}
+		_ = json.Unmarshal(todoJSON, &j.TodoList)
+		if j.TodoList == nil {
+			j.TodoList = []string{}
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, total, rows.Err()
 }
