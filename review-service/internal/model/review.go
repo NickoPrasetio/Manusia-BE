@@ -40,3 +40,20 @@ type Review struct {
 	CreatedAt time.Time   `db:"created_at" json:"createdAt"`
 }
 
+// RatingDist is a single star-level count for the distribution chart.
+type RatingDist struct {
+	Star  int `json:"star"`
+	Count int `json:"count"`
+}
+
+// ReviewPage is the paginated response for the worker's review list.
+type ReviewPage struct {
+	Reviews   []Review     `json:"reviews"`
+	Total     int          `json:"total"`
+	AvgRating float64      `json:"avgRating"`
+	Dist      []RatingDist `json:"dist"`
+	Page      int          `json:"page"`
+	Limit     int          `json:"limit"`
+	Last      bool         `json:"last"`
+}
+

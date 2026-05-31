@@ -2,14 +2,6 @@ package model
 
 import "time"
 
-// UserType represents whether the user is a customer or a worker
-type UserType string
-
-const (
-	UserTypeCustomer UserType = "CUSTOMER"
-	UserTypeWorker   UserType = "WORKER"
-)
-
 // User is the core auth entity stored in manusia_auth database
 type User struct {
 	ID           string    `db:"id"            json:"id"`
@@ -18,7 +10,6 @@ type User struct {
 	PasswordHash string    `db:"password_hash" json:"-"`
 	Phone        string    `db:"phone"         json:"phone"`
 	Role         string    `db:"role"          json:"role"`
-	UserType     UserType  `db:"user_type"     json:"userType"`
 	Avatar       string    `db:"avatar"        json:"avatar"`
 	NIK          string    `db:"nik"           json:"nik"`
 	BirthDate    string    `db:"birth_date"    json:"birthDate"`
@@ -35,7 +26,6 @@ type RegisterRequest struct {
 	Email     string   `form:"email"`
 	Password  string   `form:"password"`
 	Phone     string   `form:"phone"`
-	UserType  UserType `form:"userType"`
 	NIK       string   `form:"nik"`
 	BirthDate string   `form:"birthDate"`
 	Gender    string   `form:"gender"`
@@ -58,7 +48,6 @@ type AuthResponse struct {
 	Email     string   `json:"email"`
 	Phone     string   `json:"phone"`
 	Role      string   `json:"role"`
-	UserType  UserType `json:"userType"`
 	Avatar    string   `json:"avatar"`
 	NIK       string   `json:"nik"`
 	BirthDate string   `json:"birthDate"`
@@ -72,4 +61,10 @@ type AuthResponse struct {
 type UpdateProfileRequest struct {
 	Name  string `json:"name"`
 	Phone string `json:"phone"`
+}
+
+// ChangePasswordRequest for PUT /api/auth/me/password
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword" binding:"required"`
+	NewPassword     string `json:"newPassword"     binding:"required,min=8"`
 }

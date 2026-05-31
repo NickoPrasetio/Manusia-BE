@@ -71,14 +71,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Email:     strings.TrimSpace(c.PostForm("email")),
 		Password:  c.PostForm("password"),
 		Phone:     strings.TrimSpace(c.PostForm("phone")),
-		UserType:  model.UserType(c.PostForm("userType")),
 		NIK:       c.PostForm("nik"),
 		BirthDate: c.PostForm("birthDate"),
 		Gender:    c.PostForm("gender"),
 	}
 
 	// Validate required fields
-	if req.Name == "" || req.Email == "" || req.Password == "" || req.Phone == "" || req.UserType == "" {
+	if req.Name == "" || req.Email == "" || req.Password == "" || req.Phone == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "semua field wajib diisi"})
 		return
 	}
@@ -155,6 +154,20 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	id := c.GetString("userID")
+	var req model.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "currentPassword dan newPassword wajib diisi (min 8 karakter)"})
+		return
+	}
+	if err := h.svc.ChangePassword(c.Request.Context(), id, req.CurrentPassword, req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Password berhasil diubah"})
 }
 
 func (h *AuthHandler) UploadAvatar(c *gin.Context) {

@@ -32,7 +32,6 @@ func (s *AuthService) Register(ctx context.Context, req *model.RegisterRequest) 
 		PasswordHash: string(hash),
 		Phone:        req.Phone,
 		Role:         "ROLE_USER",
-		UserType:     req.UserType,
 		NIK:          req.NIK,
 		BirthDate:    req.BirthDate,
 		Gender:       req.Gender,
@@ -86,6 +85,21 @@ func (s *AuthService) UpdateProfile(ctx context.Context, id string, req *model.U
 	return s.GetMe(ctx, id)
 }
 
+func (s *AuthService) ChangePassword(ctx context.Context, id, currentPassword, newPassword string) error {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("user tidak ditemukan")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(currentPassword)); err != nil {
+		return fmt.Errorf("password saat ini salah")
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePassword(ctx, id, string(newHash))
+}
+
 func (s *AuthService) UpdateAvatar(ctx context.Context, id, avatarURL string) (*model.AuthResponse, error) {
 	if err := s.repo.UpdateAvatar(ctx, id, avatarURL); err != nil {
 		return nil, err
@@ -95,13 +109,12 @@ func (s *AuthService) UpdateAvatar(ctx context.Context, id, avatarURL string) (*
 
 func (s *AuthService) generateToken(u *model.User) (string, error) {
 	claims := jwt.MapClaims{
-		"sub":      u.ID,
-		"email":    u.Email,
-		"name":     u.Name,
-		"userType": string(u.UserType),
-		"role":     u.Role,
-		"exp":      time.Now().Add(30 * 24 * time.Hour).Unix(),
-		"iat":      time.Now().Unix(),
+		"sub":   u.ID,
+		"email": u.Email,
+		"name":  u.Name,
+		"role":  u.Role,
+		"exp":   time.Now().Add(30 * 24 * time.Hour).Unix(),
+		"iat":   time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
@@ -119,7 +132,6 @@ func toResponse(u *model.User, token string) *model.AuthResponse {
 		Email:     u.Email,
 		Phone:     u.Phone,
 		Role:      u.Role,
-		UserType:  u.UserType,
 		Avatar:    u.Avatar,
 		NIK:       u.NIK,
 		BirthDate: u.BirthDate,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/manusia/user-service/internal/config"
 	"github.com/manusia/user-service/internal/handler"
 	"github.com/manusia/user-service/internal/middleware"
+	"github.com/manusia/user-service/internal/model"
 	"github.com/manusia/user-service/internal/repository"
 	"github.com/manusia/user-service/internal/service"
 )
@@ -77,6 +79,60 @@ func main() {
 				p, err := svc.GetByAuthID(c.Request.Context(), authID)
 				if err != nil {
 					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, p)
+			})
+			// PUT /api/users/me/profile — upsert own bio profile
+			protected.PUT("/users/me/profile", func(c *gin.Context) {
+				authID := c.GetString("userID")
+				var req model.UpdateProfileRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				existing, err := svc.GetByAuthID(c.Request.Context(), authID)
+				if err != nil {
+					// Profile not yet created — create a minimal one first
+					createReq := &model.CreateProfileRequest{
+						AuthID: authID,
+						Name:   req.Name,
+					}
+					existing, err = svc.Create(c.Request.Context(), createReq)
+					if err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+				}
+				p, err := svc.Update(c.Request.Context(), existing.ID, &req)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, p)
+			})
+			// POST /api/users/me/photo — upload own avatar
+			protected.POST("/users/me/photo", func(c *gin.Context) {
+				authID := c.GetString("userID")
+				existing, err := svc.GetByAuthID(c.Request.Context(), authID)
+				if err != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": "profil belum dibuat, simpan profil terlebih dahulu"})
+					return
+				}
+				file, header, err := c.Request.FormFile("file")
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "file tidak ditemukan"})
+					return
+				}
+				defer file.Close()
+				data, err := io.ReadAll(file)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca file"})
+					return
+				}
+				p, err := svc.UploadPhotoBytes(c.Request.Context(), existing.ID, data, header.Filename, header.Header.Get("Content-Type"))
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}
 				c.JSON(http.StatusOK, p)

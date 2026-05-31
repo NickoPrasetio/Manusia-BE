@@ -49,6 +49,7 @@ func main() {
 	{
 		// Public
 		api.GET("/worker/:workerId", h.GetByWorker)
+		api.GET("/worker/:workerId/page", h.GetByWorkerPage)
 
 		// Protected
 		protected := api.Group("")

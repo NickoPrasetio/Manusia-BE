@@ -38,23 +38,25 @@ func (s *StringArray) Scan(src interface{}) error {
 
 // UserProfile is the worker profile entity
 type UserProfile struct {
-	ID              string     `db:"id"               json:"id"`
-	AuthID          string     `db:"auth_id"          json:"authId"`
-	Name            string     `db:"name"             json:"name"`
-	Avatar          string     `db:"avatar"           json:"avatar"`
-	Age             int        `db:"age"              json:"age"`
-	Experience      int        `db:"experience"       json:"experience"`
-	Rating          float64    `db:"rating"           json:"rating"`
-	TotalReviews    int        `db:"total_reviews"    json:"totalReviews"`
-	Specializations StringArray `db:"specializations" json:"specializations"`
-	Location        string     `db:"location"         json:"location"`
-	PricePerDay     int64      `db:"price_per_day"    json:"pricePerDay"`
-	IsAvailable     bool       `db:"is_available"     json:"isAvailable"`
-	WorkStatus      WorkStatus `db:"work_status"      json:"workStatus"`
-	Bio             string     `db:"bio"              json:"bio"`
-	Latitude        *float64   `db:"latitude"         json:"latitude,omitempty"`
-	Longitude       *float64   `db:"longitude"        json:"longitude,omitempty"`
-	CreatedAt       time.Time  `db:"created_at"       json:"createdAt"`
+	ID              string      `db:"id"               json:"id"`
+	AuthID          string      `db:"auth_id"          json:"authId"`
+	Name            string      `db:"name"             json:"name"`
+	Avatar          string      `db:"avatar"           json:"avatar"`
+	Age             int         `db:"age"              json:"age"`
+	Experience      int         `db:"experience"       json:"experience"`
+	Rating          float64     `db:"rating"           json:"rating"`
+	TotalReviews    int         `db:"total_reviews"    json:"totalReviews"`
+	Specializations StringArray `db:"specializations"  json:"specializations"`
+	Location        string      `db:"location"         json:"location"`
+	PricePerDay     int64       `db:"price_per_day"    json:"pricePerDay"`
+	IsAvailable     bool        `db:"is_available"     json:"isAvailable"`
+	WorkStatus      WorkStatus  `db:"work_status"      json:"workStatus"`
+	Bio             string      `db:"bio"              json:"bio"`
+	Gender          string      `db:"gender"           json:"gender"`
+	BirthPlace      string      `db:"birth_place"      json:"birthPlace"`
+	Latitude        *float64    `db:"latitude"         json:"latitude,omitempty"`
+	Longitude       *float64    `db:"longitude"        json:"longitude,omitempty"`
+	CreatedAt       time.Time   `db:"created_at"       json:"createdAt"`
 }
 
 // CreateProfileRequest for POST /api/users
@@ -69,7 +71,7 @@ type CreateProfileRequest struct {
 	Bio             string     `json:"bio"`
 }
 
-// UpdateProfileRequest for PUT /api/users/:id
+// UpdateProfileRequest for PUT /api/users/:id or PUT /api/users/me/profile
 type UpdateProfileRequest struct {
 	Name            string   `json:"name"`
 	Age             int      `json:"age"`
@@ -80,6 +82,8 @@ type UpdateProfileRequest struct {
 	Bio             string   `json:"bio"`
 	IsAvailable     *bool    `json:"isAvailable"`
 	WorkStatus      string   `json:"workStatus"`
+	Gender          string   `json:"gender"`
+	BirthPlace      string   `json:"birthPlace"`
 }
 
 // ProfilePage is the paginated response

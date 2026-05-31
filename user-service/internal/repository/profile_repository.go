@@ -42,10 +42,12 @@ func (r *ProfileRepository) Migrate(ctx context.Context) error {
 	`); err != nil {
 		return err
 	}
-	// Idempotent: add lat/lon columns for existing deployments
+	// Idempotent: add columns for existing deployments
 	for _, col := range []string{
-		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS latitude  DOUBLE PRECISION`,
-		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`,
+		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS latitude    DOUBLE PRECISION`,
+		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS longitude   DOUBLE PRECISION`,
+		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS gender      TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS birth_place TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := r.db.Exec(ctx, col); err != nil {
 			return err
@@ -89,7 +91,7 @@ func (r *ProfileRepository) FindPage(ctx context.Context, page, size int, search
 	}
 
 	dataArgs, nextIdx := buildFiltersSlice(search, available, 1)
-	dataQ += fmt.Sprintf(" ORDER BY rating DESC LIMIT $%d OFFSET $%d", nextIdx, nextIdx+1)
+	dataQ += fmt.Sprintf(" ORDER BY rating DESC, created_at ASC, id ASC LIMIT $%d OFFSET $%d", nextIdx, nextIdx+1)
 	dataArgs = append(dataArgs, size, page*size)
 
 	_ = idx // suppress unused warning
@@ -156,6 +158,12 @@ func (r *ProfileRepository) Update(ctx context.Context, id string, req *model.Up
 	if req.WorkStatus != "" {
 		setClauses = append(setClauses, fmt.Sprintf("work_status=$%d", idx)); args = append(args, req.WorkStatus); idx++
 	}
+	if req.Gender != "" {
+		setClauses = append(setClauses, fmt.Sprintf("gender=$%d", idx)); args = append(args, req.Gender); idx++
+	}
+	if req.BirthPlace != "" {
+		setClauses = append(setClauses, fmt.Sprintf("birth_place=$%d", idx)); args = append(args, req.BirthPlace); idx++
+	}
 	if len(setClauses) == 0 {
 		return nil
 	}
@@ -185,11 +193,12 @@ func (r *ProfileRepository) UpdateAvailabilityByAuthID(ctx context.Context, auth
 			longitude    = COALESCE(EXCLUDED.longitude, user_profiles.longitude)
 		RETURNING id, auth_id, name, avatar, age, experience, rating, total_reviews,
 		          specializations, location, price_per_day, is_available, work_status,
-		          bio, latitude, longitude, created_at
+		          bio, latitude, longitude, gender, birth_place, created_at
 	`, authID, isAvailable, workStatus, lat, lon).Scan(
 		&p.ID, &p.AuthID, &p.Name, &p.Avatar, &p.Age, &p.Experience,
 		&p.Rating, &p.TotalReviews, &specsJSON, &p.Location,
-		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude, &p.CreatedAt,
+		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude,
+		&p.Gender, &p.BirthPlace, &p.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -214,7 +223,7 @@ func (r *ProfileRepository) UpdateRating(ctx context.Context, authID string, rat
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func baseSelect() string {
-	return `SELECT id, auth_id, name, avatar, age, experience, rating, total_reviews, specializations, location, price_per_day, is_available, work_status, bio, latitude, longitude, created_at FROM user_profiles`
+	return `SELECT id, auth_id, name, avatar, age, experience, rating, total_reviews, specializations, location, price_per_day, is_available, work_status, bio, latitude, longitude, gender, birth_place, created_at FROM user_profiles`
 }
 
 func buildFilters(q *string, search string, available *bool, startIdx int) ([]interface{}, int) {
@@ -266,7 +275,8 @@ func (r *ProfileRepository) scanOne(ctx context.Context, q string, arg interface
 	err := r.db.QueryRow(ctx, q, arg).Scan(
 		&p.ID, &p.AuthID, &p.Name, &p.Avatar, &p.Age, &p.Experience,
 		&p.Rating, &p.TotalReviews, &specsJSON, &p.Location,
-		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude, &p.CreatedAt,
+		&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude,
+		&p.Gender, &p.BirthPlace, &p.CreatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -289,7 +299,8 @@ func scanRows(rows pgx.Rows) ([]model.UserProfile, error) {
 		err := rows.Scan(
 			&p.ID, &p.AuthID, &p.Name, &p.Avatar, &p.Age, &p.Experience,
 			&p.Rating, &p.TotalReviews, &specsJSON, &p.Location,
-			&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude, &p.CreatedAt,
+			&p.PricePerDay, &p.IsAvailable, &p.WorkStatus, &p.Bio, &p.Latitude, &p.Longitude,
+			&p.Gender, &p.BirthPlace, &p.CreatedAt,
 		)
 		if err != nil {
 			return nil, err

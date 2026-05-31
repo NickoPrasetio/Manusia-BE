@@ -63,6 +63,7 @@ func main() {
 			protected.GET("/me", h.GetMe)
 			protected.PUT("/me", h.UpdateMe)
 			protected.POST("/me/photo", h.UploadAvatar)
+			protected.PUT("/me/password", h.ChangePassword)
 		}
 	}
 

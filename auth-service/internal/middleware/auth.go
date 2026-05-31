@@ -35,7 +35,6 @@ func JWTAuth(secret []byte) gin.HandlerFunc {
 		}
 
 		c.Set("userID", claims["sub"].(string))
-		c.Set("userType", claims["userType"])
 		c.Set("email", claims["email"])
 		c.Next()
 	}

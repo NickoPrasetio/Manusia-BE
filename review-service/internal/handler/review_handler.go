@@ -45,6 +45,43 @@ func NewReviewHandler(repo *repository.ReviewRepository, cfg *config.Config) (*R
 	return &ReviewHandler{repo: repo, cfg: cfg, minio: mc}, nil
 }
 
+// GetByWorkerPage handles GET /api/reviews/worker/:workerId/page?page=0&limit=10
+func (h *ReviewHandler) GetByWorkerPage(c *gin.Context) {
+	workerID := c.Param("workerId")
+
+	page := 0
+	limit := 10
+	fmt.Sscanf(c.DefaultQuery("page", "0"), "%d", &page)
+	fmt.Sscanf(c.DefaultQuery("limit", "10"), "%d", &limit)
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+	if page < 0 {
+		page = 0
+	}
+
+	reviews, total, avg, dist, err := h.repo.FindPage(c.Request.Context(), workerID, page, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if reviews == nil {
+		reviews = []model.Review{}
+	}
+
+	last := (page+1)*limit >= total
+
+	c.JSON(http.StatusOK, model.ReviewPage{
+		Reviews:   reviews,
+		Total:     total,
+		AvgRating: avg,
+		Dist:      dist,
+		Page:      page,
+		Limit:     limit,
+		Last:      last,
+	})
+}
+
 func (h *ReviewHandler) GetByWorker(c *gin.Context) {
 	workerID := c.Param("workerId")
 	reviews, err := h.repo.FindByWorker(c.Request.Context(), workerID)

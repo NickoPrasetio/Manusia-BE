@@ -27,7 +27,6 @@ func (r *UserRepository) Migrate(ctx context.Context) error {
 			password_hash TEXT NOT NULL,
 			phone         TEXT NOT NULL DEFAULT '',
 			role          TEXT NOT NULL DEFAULT 'ROLE_USER',
-			user_type     TEXT NOT NULL DEFAULT 'CUSTOMER',
 			avatar        TEXT NOT NULL DEFAULT '',
 			nik           TEXT NOT NULL DEFAULT '',
 			birth_date    TEXT NOT NULL DEFAULT '',
@@ -53,10 +52,10 @@ func (r *UserRepository) Migrate(ctx context.Context) error {
 
 func (r *UserRepository) Create(ctx context.Context, u *model.User) error {
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO users (name, email, password_hash, phone, role, user_type, nik, birth_date, gender, ktp_photo, latitude, longitude)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO users (name, email, password_hash, phone, role, nik, birth_date, gender, ktp_photo, latitude, longitude)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at
-	`, u.Name, u.Email, u.PasswordHash, u.Phone, u.Role, u.UserType,
+	`, u.Name, u.Email, u.PasswordHash, u.Phone, u.Role,
 		u.NIK, u.BirthDate, u.Gender, u.KTPPhoto, u.Latitude, u.Longitude).
 		Scan(&u.ID, &u.CreatedAt)
 	if err != nil {
@@ -75,11 +74,11 @@ func (r *UserRepository) Create(ctx context.Context, u *model.User) error {
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, name, email, password_hash, phone, role, user_type, avatar, nik, birth_date, gender, ktp_photo, latitude, longitude, created_at
+		SELECT id, name, email, password_hash, phone, role, avatar, nik, birth_date, gender, ktp_photo, latitude, longitude, created_at
 		FROM users WHERE email = $1
 	`, email).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash,
-		&u.Phone, &u.Role, &u.UserType, &u.Avatar,
+		&u.Phone, &u.Role, &u.Avatar,
 		&u.NIK, &u.BirthDate, &u.Gender, &u.KTPPhoto,
 		&u.Latitude, &u.Longitude, &u.CreatedAt,
 	)
@@ -92,11 +91,11 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*model.User, error) {
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, name, email, password_hash, phone, role, user_type, avatar, nik, birth_date, gender, ktp_photo, latitude, longitude, created_at
+		SELECT id, name, email, password_hash, phone, role, avatar, nik, birth_date, gender, ktp_photo, latitude, longitude, created_at
 		FROM users WHERE id = $1
 	`, id).Scan(
 		&u.ID, &u.Name, &u.Email, &u.PasswordHash,
-		&u.Phone, &u.Role, &u.UserType, &u.Avatar,
+		&u.Phone, &u.Role, &u.Avatar,
 		&u.NIK, &u.BirthDate, &u.Gender, &u.KTPPhoto,
 		&u.Latitude, &u.Longitude, &u.CreatedAt,
 	)
@@ -110,6 +109,14 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, id, name, phone stri
 	_, err := r.db.Exec(ctx,
 		`UPDATE users SET name = $1, phone = $2 WHERE id = $3`,
 		name, phone, id,
+	)
+	return err
+}
+
+func (r *UserRepository) UpdatePassword(ctx context.Context, id, newHash string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE users SET password_hash = $1 WHERE id = $2`,
+		newHash, id,
 	)
 	return err
 }

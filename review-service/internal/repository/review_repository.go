@@ -58,6 +58,63 @@ func (r *ReviewRepository) FindByWorker(ctx context.Context, workerID string) ([
 	return scanReviews(rows)
 }
 
+// FindPage returns a paginated slice of reviews for a worker, newest-first,
+// plus aggregate stats (total, avg, per-star distribution).
+func (r *ReviewRepository) FindPage(ctx context.Context, workerID string, page, limit int) ([]model.Review, int, float64, []model.RatingDist, error) {
+	// aggregate stats
+	rows, err := r.db.Query(ctx,
+		`SELECT rating, COUNT(*) FROM reviews WHERE worker_id=$1 GROUP BY rating`, workerID)
+	if err != nil {
+		return nil, 0, 0, nil, err
+	}
+	defer rows.Close()
+
+	var total int
+	var sum int
+	distMap := map[int]int{}
+	for rows.Next() {
+		var star, cnt int
+		if err := rows.Scan(&star, &cnt); err != nil {
+			return nil, 0, 0, nil, err
+		}
+		distMap[star] = cnt
+		total += cnt
+		sum += star * cnt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, nil, err
+	}
+
+	var avg float64
+	if total > 0 {
+		avg = float64(sum) / float64(total)
+	}
+
+	dist := make([]model.RatingDist, 5)
+	for i, star := range []int{5, 4, 3, 2, 1} {
+		dist[i] = model.RatingDist{Star: star, Count: distMap[star]}
+	}
+
+	// paginated reviews
+	offset := page * limit
+	reviewRows, err := r.db.Query(ctx,
+		`SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, created_at
+		 FROM reviews WHERE worker_id=$1
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT $2 OFFSET $3`,
+		workerID, limit, offset)
+	if err != nil {
+		return nil, 0, 0, nil, err
+	}
+	defer reviewRows.Close()
+
+	reviews, err := scanReviews(reviewRows)
+	if err != nil {
+		return nil, 0, 0, nil, err
+	}
+	return reviews, total, avg, dist, nil
+}
+
 func (r *ReviewRepository) AverageRating(ctx context.Context, workerID string) (float64, int, error) {
 	var avg float64
 	var count int
