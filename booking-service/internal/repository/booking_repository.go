@@ -39,23 +39,29 @@ func (r *BookingRepository) Migrate(ctx context.Context) error {
 			created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	// Idempotent migrations
+	r.db.Exec(ctx, `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS job_id    TEXT NOT NULL DEFAULT ''`)
+	r.db.Exec(ctx, `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS job_title TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 func (r *BookingRepository) Create(ctx context.Context, b *model.Booking) error {
 	return r.db.QueryRow(ctx, `
-		INSERT INTO bookings (worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, notes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		INSERT INTO bookings (worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, notes, job_id, job_title)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		RETURNING id, created_at
 	`, b.WorkerID, b.WorkerName, b.WorkerAvatar, b.CustomerID, b.CustomerName,
 		b.Address, b.City, b.Latitude, b.Longitude,
-		b.BookingDate, b.StartTime, b.DurationDays, b.PaymentMethod, b.Notes).
+		b.BookingDate, b.StartTime, b.DurationDays, b.PaymentMethod, b.Notes, b.JobID, b.JobTitle).
 		Scan(&b.ID, &b.CreatedAt)
 }
 
 func (r *BookingRepository) FindByCustomer(ctx context.Context, customerID string) ([]model.Booking, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, status, notes, created_at
+		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, status, notes, job_id, job_title, created_at
 		FROM bookings WHERE customer_id = $1 ORDER BY created_at DESC
 	`, customerID)
 	if err != nil {
@@ -67,7 +73,7 @@ func (r *BookingRepository) FindByCustomer(ctx context.Context, customerID strin
 
 func (r *BookingRepository) FindByWorker(ctx context.Context, workerID string) ([]model.Booking, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, status, notes, created_at
+		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, status, notes, job_id, job_title, created_at
 		FROM bookings WHERE worker_id = $1 ORDER BY created_at DESC
 	`, workerID)
 	if err != nil {
@@ -80,13 +86,13 @@ func (r *BookingRepository) FindByWorker(ctx context.Context, workerID string) (
 func (r *BookingRepository) FindByID(ctx context.Context, id string) (*model.Booking, error) {
 	var b model.Booking
 	err := r.db.QueryRow(ctx, `
-		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, status, notes, created_at
+		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name, address, city, latitude, longitude, booking_date, start_time, duration_days, payment_method, status, notes, job_id, job_title, created_at
 		FROM bookings WHERE id = $1
 	`, id).Scan(
 		&b.ID, &b.WorkerID, &b.WorkerName, &b.WorkerAvatar,
 		&b.CustomerID, &b.CustomerName, &b.Address, &b.City,
 		&b.Latitude, &b.Longitude, &b.BookingDate, &b.StartTime,
-		&b.DurationDays, &b.PaymentMethod, &b.Status, &b.Notes, &b.CreatedAt,
+		&b.DurationDays, &b.PaymentMethod, &b.Status, &b.Notes, &b.JobID, &b.JobTitle, &b.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("booking tidak ditemukan")
@@ -109,7 +115,7 @@ func (r *BookingRepository) FindOpenNearby(ctx context.Context, lat, lon, radius
 	query := fmt.Sprintf(`
 		SELECT id, worker_id, worker_name, worker_avatar, customer_id, customer_name,
 		       address, city, latitude, longitude, booking_date, start_time, duration_days,
-		       payment_method, status, notes, created_at
+		       payment_method, status, notes, job_id, job_title, created_at
 		FROM bookings
 		WHERE status = 'PENDING'
 		  AND latitude  <> 0 AND longitude <> 0
@@ -134,7 +140,7 @@ func scanBookings(rows pgx.Rows) ([]model.Booking, error) {
 			&b.ID, &b.WorkerID, &b.WorkerName, &b.WorkerAvatar,
 			&b.CustomerID, &b.CustomerName, &b.Address, &b.City,
 			&b.Latitude, &b.Longitude, &b.BookingDate, &b.StartTime,
-			&b.DurationDays, &b.PaymentMethod, &b.Status, &b.Notes, &b.CreatedAt,
+			&b.DurationDays, &b.PaymentMethod, &b.Status, &b.Notes, &b.JobID, &b.JobTitle, &b.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -95,6 +95,39 @@ func (h *ReviewHandler) GetByWorker(c *gin.Context) {
 	c.JSON(http.StatusOK, reviews)
 }
 
+// GetGivenByUser handles GET /api/reviews/given/:userId/page?page=0&limit=10
+func (h *ReviewHandler) GetGivenByUser(c *gin.Context) {
+	userID := c.Param("userId")
+
+	page, limit := 0, 10
+	fmt.Sscanf(c.DefaultQuery("page", "0"), "%d", &page)
+	fmt.Sscanf(c.DefaultQuery("limit", "10"), "%d", &limit)
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+	if page < 0 {
+		page = 0
+	}
+
+	reviews, total, err := h.repo.FindGivenByUser(c.Request.Context(), userID, page, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if reviews == nil {
+		reviews = []model.Review{}
+	}
+
+	last := (page+1)*limit >= total
+	c.JSON(http.StatusOK, gin.H{
+		"reviews": reviews,
+		"total":   total,
+		"page":    page,
+		"limit":   limit,
+		"last":    last,
+	})
+}
+
 func (h *ReviewHandler) CreateWithPhotos(c *gin.Context) {
 	userID := c.GetString("userID")
 	userName, _ := c.Get("userName")

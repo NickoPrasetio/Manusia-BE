@@ -115,6 +115,29 @@ func (r *ReviewRepository) FindPage(ctx context.Context, workerID string, page, 
 	return reviews, total, avg, dist, nil
 }
 
+func (r *ReviewRepository) FindGivenByUser(ctx context.Context, userID string, page, limit int) ([]model.Review, int, error) {
+	var total int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM reviews WHERE user_id=$1`, userID).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	offset := page * limit
+	rows, err := r.db.Query(ctx,
+		`SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, created_at
+		 FROM reviews WHERE user_id=$1
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT $2 OFFSET $3`,
+		userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	reviews, err := scanReviews(rows)
+	return reviews, total, err
+}
+
 func (r *ReviewRepository) AverageRating(ctx context.Context, workerID string) (float64, int, error) {
 	var avg float64
 	var count int

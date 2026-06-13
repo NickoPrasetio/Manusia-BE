@@ -11,11 +11,15 @@ import (
 )
 
 type JobHandler struct {
-	repo *repository.JobRepository
+	repo        *repository.JobRepository
+	bookingRepo *repository.BookingRepository
 }
 
 func NewJobHandler(db *pgxpool.Pool) *JobHandler {
-	return &JobHandler{repo: repository.NewJobRepository(db)}
+	return &JobHandler{
+		repo:        repository.NewJobRepository(db),
+		bookingRepo: repository.NewBookingRepository(db),
+	}
 }
 
 // POST /api/jobs
@@ -160,4 +164,62 @@ func (h *JobHandler) GetNearby(c *gin.Context) {
 		Limit:   limit,
 		HasMore: int64(offset+len(jobs)) < total,
 	})
+}
+
+// POST /api/jobs/:id/apply
+// Worker menawarkan diri untuk job posting.
+// Membuat booking baru: worker=currentUser, customer=job.CustomerID
+func (h *JobHandler) ApplyToJob(c *gin.Context) {
+	workerID   := c.GetString("userID")
+	jobID      := c.Param("id")
+
+	var req struct {
+		WorkerName   string `json:"workerName"`
+		WorkerAvatar string `json:"workerAvatar"`
+		Notes        string `json:"notes"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	// Ambil job
+	job, err := h.repo.FindByID(c.Request.Context(), jobID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Job tidak ditemukan"})
+		return
+	}
+	if job.Status != model.JobStatusOpen {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Job sudah tidak tersedia"})
+		return
+	}
+	if job.CustomerID == workerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tidak bisa melamar job milik sendiri"})
+		return
+	}
+
+	// Buat booking
+	b := &model.Booking{
+		WorkerID:      workerID,
+		WorkerName:    req.WorkerName,
+		WorkerAvatar:  req.WorkerAvatar,
+		CustomerID:    job.CustomerID,
+		CustomerName:  job.CustomerName,
+		Address:       job.City,
+		City:          job.City,
+		Latitude:      job.Latitude,
+		Longitude:     job.Longitude,
+		BookingDate:   "",
+		StartTime:     "08:00",
+		DurationDays:  job.DurationDays,
+		PaymentMethod: "CASH",
+		Notes:         req.Notes,
+		JobID:         jobID,
+		JobTitle:      job.Title,
+		Status:        model.StatusPending,
+	}
+
+	if err := h.bookingRepo.Create(c.Request.Context(), b); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat penawaran: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, b)
 }

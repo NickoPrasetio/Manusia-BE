@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -11,6 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/manusia/api-gateway/internal/config"
 )
+
+//go:embed docs/openapi.yaml
+var openapiSpec []byte
 
 func main() {
 	cfg := config.Load()
@@ -31,6 +35,15 @@ func main() {
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "api-gateway"})
+	})
+
+	// ── Swagger UI ──────────────────────────────────────────────────────────────
+	// Akses di http://localhost:8080/docs
+	r.GET("/docs/spec", func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openapiSpec)
+	})
+	r.GET("/docs", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(swaggerUI))
 	})
 
 	// Route rules: path prefix → target URL
@@ -90,7 +103,44 @@ func main() {
 	})
 
 	log.Printf("api-gateway listening on :%s", cfg.Port)
+	log.Printf("Swagger UI  → http://localhost:%s/docs", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}
 }
+
+const swaggerUI = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manusia API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; }
+    .swagger-ui .topbar { background: #1e40af; }
+    .swagger-ui .topbar .download-url-wrapper { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = () => {
+      SwaggerUIBundle({
+        url: '/docs/spec',
+        dom_id: '#swagger-ui',
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: 'StandaloneLayout',
+        deepLinking: true,
+        defaultModelsExpandDepth: 1,
+        defaultModelExpandDepth: 1,
+        displayRequestDuration: true,
+        filter: true,
+        tryItOutEnabled: true,
+      });
+    };
+  </script>
+</body>
+</html>`

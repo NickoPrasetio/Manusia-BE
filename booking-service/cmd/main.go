@@ -74,6 +74,7 @@ func main() {
 		jobs.GET("/my", jh.GetMy)
 		jobs.GET("/:id", jh.GetByID)
 		jobs.PATCH("/:id/close", jh.Close)
+		jobs.POST("/:id/apply", jh.ApplyToJob)
 	}
 
 	log.Printf("booking-service listening on :%s", cfg.Port)

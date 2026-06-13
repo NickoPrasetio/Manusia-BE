@@ -28,6 +28,8 @@ type Booking struct {
 	PaymentMethod string        `db:"payment_method" json:"paymentMethod"`
 	Status        BookingStatus `db:"status"         json:"status"`
 	Notes         string        `db:"notes"          json:"notes"`
+	JobID         string        `db:"job_id"         json:"jobId"`
+	JobTitle      string        `db:"job_title"      json:"jobTitle"`
 	CreatedAt     time.Time     `db:"created_at"     json:"createdAt"`
 }
 

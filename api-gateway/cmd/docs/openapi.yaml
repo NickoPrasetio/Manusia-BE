@@ -1,0 +1,1148 @@
+openapi: 3.0.3
+info:
+  title: Manusia API
+  description: |
+    Marketplace jasa umum — siapapun bisa minta tolong atau jadi penolong.
+    Semua request melalui API Gateway di port **8080**.
+
+    **Auth**: Gunakan tombol "Authorize" → masukkan token JWT dengan format `Bearer <token>`.
+    Token didapat dari `POST /api/auth/login`.
+  version: "1.0.0"
+  contact:
+    name: Nicko
+
+servers:
+  - url: http://localhost:8080
+    description: Development (via API Gateway)
+
+tags:
+  - name: Auth
+    description: Registrasi, login, profil akun
+  - name: Users & Workers
+    description: Profil pengguna / penolong
+  - name: Jobs
+    description: Posting pekerjaan & lamaran
+  - name: Bookings
+    description: Pemesanan & status order
+  - name: Reviews
+    description: Ulasan dan rating
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: pesan error di sini
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        user:
+          $ref: '#/components/schemas/AuthUser'
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        avatar:
+          type: string
+        role:
+          type: string
+          example: user
+        gender:
+          type: string
+          example: MALE
+        birthDate:
+          type: string
+          example: "1995-03-15"
+        nik:
+          type: string
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        authId:
+          type: string
+        name:
+          type: string
+        bio:
+          type: string
+        location:
+          type: string
+        age:
+          type: integer
+        experience:
+          type: integer
+        rating:
+          type: number
+          format: float
+        totalReviews:
+          type: integer
+        pricePerDay:
+          type: integer
+        workStatus:
+          type: string
+          enum: [OPEN, CLOSED, BOOKED]
+        specializations:
+          type: array
+          items:
+            type: string
+        avatar:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        gender:
+          type: string
+        birthPlace:
+          type: string
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+        customerName:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        budgetPerDay:
+          type: integer
+          example: 150000
+        todoList:
+          type: array
+          items:
+            type: string
+        durationDays:
+          type: integer
+        city:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        category:
+          type: string
+          enum: [TASK, PROJECT, EVENT]
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
+        createdAt:
+          type: string
+          format: date-time
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+        workerName:
+          type: string
+        workerAvatar:
+          type: string
+        customerId:
+          type: string
+        customerName:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        bookingDate:
+          type: string
+          example: "2026-07-01"
+        startTime:
+          type: string
+          example: "08:00"
+        durationDays:
+          type: integer
+        paymentMethod:
+          type: string
+          example: CASH
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, CANCELLED, COMPLETED]
+        notes:
+          type: string
+        jobId:
+          type: string
+        jobTitle:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workerId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        bookingId:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+        date:
+          type: string
+          example: "2026-06-01"
+
+    ReviewPage:
+      type: object
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        total:
+          type: integer
+        avgRating:
+          type: number
+          format: float
+        dist:
+          type: array
+          items:
+            type: object
+            properties:
+              star:
+                type: integer
+              count:
+                type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        last:
+          type: boolean
+
+paths:
+
+  # ─── AUTH ────────────────────────────────────────────────────────────────────
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Daftar akun baru
+      description: Register dengan data diri + foto KTP (opsional). Request dalam format `multipart/form-data`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, email, password, phone]
+              properties:
+                name:
+                  type: string
+                  example: Budi Santoso
+                email:
+                  type: string
+                  example: budi@example.com
+                password:
+                  type: string
+                  example: rahasia123
+                phone:
+                  type: string
+                  example: "08123456789"
+                nik:
+                  type: string
+                  example: "3271234567890001"
+                birthDate:
+                  type: string
+                  example: "1995-03-15"
+                gender:
+                  type: string
+                  enum: [MALE, FEMALE]
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                ktp:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Akun berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Data tidak lengkap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email sudah terdaftar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  example: nick_jyj@yahoo.com
+                password:
+                  type: string
+                  example: password123
+      responses:
+        '200':
+          description: Login berhasil, token JWT dikembalikan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Email atau password salah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Profil saya (auth)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Data akun saat ini
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUser'
+    put:
+      tags: [Auth]
+      summary: Update nama & nomor HP
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: Profil berhasil diupdate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUser'
+
+  /api/auth/me/password:
+    put:
+      tags: [Auth]
+      summary: Ganti password
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password berhasil diubah
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Password lama salah atau password baru terlalu pendek
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/me/photo:
+    post:
+      tags: [Auth]
+      summary: Upload foto avatar akun
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Foto berhasil diupload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUser'
+
+  # ─── USERS & WORKERS ─────────────────────────────────────────────────────────
+
+  /api/workers:
+    get:
+      tags: [Users & Workers]
+      summary: List semua worker/penolong
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: available
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List worker
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserProfile'
+
+  /api/workers/page:
+    get:
+      tags: [Users & Workers]
+      summary: List worker paginated (infinite scroll)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: available
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated worker
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserProfile'
+                  totalElements:
+                    type: integer
+                  totalPages:
+                    type: integer
+                  number:
+                    type: integer
+                  last:
+                    type: boolean
+
+  /api/workers/{id}:
+    get:
+      tags: [Users & Workers]
+      summary: Detail worker by profile ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profil worker
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '404':
+          description: Tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users/me/profile:
+    get:
+      tags: [Users & Workers]
+      summary: Profil bio saya
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profil bio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+    put:
+      tags: [Users & Workers]
+      summary: Upsert profil bio saya
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                age:
+                  type: integer
+                location:
+                  type: string
+                bio:
+                  type: string
+                gender:
+                  type: string
+                  enum: [MALE, FEMALE]
+                birthPlace:
+                  type: string
+      responses:
+        '200':
+          description: Profil berhasil disimpan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  /api/users/me/photo:
+    post:
+      tags: [Users & Workers]
+      summary: Upload foto profil bio
+      description: Profil harus sudah dibuat terlebih dahulu via `PUT /api/users/me/profile`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Foto berhasil diupload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  /api/users/me/availability:
+    patch:
+      tags: [Users & Workers]
+      summary: Toggle status tersedia/tidak
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isAvailable]
+              properties:
+                isAvailable:
+                  type: boolean
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+      responses:
+        '200':
+          description: Status berhasil diupdate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  # ─── JOBS ────────────────────────────────────────────────────────────────────
+
+  /api/jobs/nearby:
+    get:
+      tags: [Jobs]
+      summary: Pekerjaan terbuka di sekitar lokasi
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+          example: -6.2088
+        - name: lon
+          in: query
+          required: true
+          schema:
+            type: number
+          example: 106.8456
+        - name: radius
+          in: query
+          schema:
+            type: number
+            default: 50
+          description: Radius pencarian dalam km
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [TASK, PROJECT, EVENT]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        '200':
+          description: List pekerjaan di sekitar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  hasMore:
+                    type: boolean
+
+  /api/jobs:
+    post:
+      tags: [Jobs]
+      summary: Buat posting pekerjaan baru
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerName, title, description, budgetPerDay, durationDays, city, category]
+              properties:
+                customerName:
+                  type: string
+                  example: Andi Wijaya
+                title:
+                  type: string
+                  example: Bantu pindahan rumah
+                description:
+                  type: string
+                budgetPerDay:
+                  type: integer
+                  example: 200000
+                todoList:
+                  type: array
+                  items:
+                    type: string
+                durationDays:
+                  type: integer
+                  example: 2
+                city:
+                  type: string
+                  example: Jakarta
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                category:
+                  type: string
+                  enum: [TASK, PROJECT, EVENT]
+      responses:
+        '201':
+          description: Pekerjaan berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+
+  /api/jobs/my:
+    get:
+      tags: [Jobs]
+      summary: Pekerjaan yang saya posting
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List job milik saya
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+
+  /api/jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Detail pekerjaan by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detail job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs/{id}/close:
+    patch:
+      tags: [Jobs]
+      summary: Tutup posting pekerjaan (owner only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job berhasil ditutup
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '403':
+          description: Bukan pemilik job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs/{id}/apply:
+    post:
+      tags: [Jobs]
+      summary: Tawarkan diri ke pekerjaan (worker)
+      description: Membuat Booking baru dengan status PENDING. Worker = user yang login, Customer = pemilik job.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workerName:
+                  type: string
+                workerAvatar:
+                  type: string
+                notes:
+                  type: string
+                  example: Saya siap kerjakan besok pagi
+      responses:
+        '201':
+          description: Lamaran berhasil dikirim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: Job sudah ditutup atau melamar job sendiri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ─── BOOKINGS ────────────────────────────────────────────────────────────────
+
+  /api/bookings:
+    post:
+      tags: [Bookings]
+      summary: Buat booking langsung ke worker
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workerId, customerName, address, city, bookingDate, startTime, durationDays, paymentMethod]
+              properties:
+                workerId:
+                  type: string
+                workerName:
+                  type: string
+                workerAvatar:
+                  type: string
+                customerName:
+                  type: string
+                address:
+                  type: string
+                city:
+                  type: string
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                bookingDate:
+                  type: string
+                  example: "2026-07-15"
+                startTime:
+                  type: string
+                  example: "08:00"
+                durationDays:
+                  type: integer
+                paymentMethod:
+                  type: string
+                  example: CASH
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Booking berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /api/bookings/my:
+    get:
+      tags: [Bookings]
+      summary: My Order — booking sebagai customer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List booking saya sebagai customer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+
+  /api/bookings/my-orders:
+    get:
+      tags: [Bookings]
+      summary: My Orders — booking sebagai worker
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List booking saya sebagai worker
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+
+  /api/bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Detail booking by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detail booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /api/bookings/{id}/confirm:
+    patch:
+      tags: [Bookings]
+      summary: Konfirmasi / Hire pelamar (customer)
+      description: Mengubah status PENDING → CONFIRMED. Dipakai customer untuk mempekerjakan pelamar.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pelamar berhasil dipekerjakan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '409':
+          description: Booking tidak berstatus PENDING
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/bookings/{id}/complete:
+    patch:
+      tags: [Bookings]
+      summary: Selesaikan order (customer)
+      description: Mengubah status CONFIRMED → COMPLETED.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order berhasil diselesaikan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /api/bookings/{id}/cancel:
+    patch:
+      tags: [Bookings]
+      summary: Batalkan order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order berhasil dibatalkan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '409':
+          description: Order tidak bisa dibatalkan (sudah selesai/dibatalkan)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ─── REVIEWS ─────────────────────────────────────────────────────────────────
+
+  /api/reviews/worker/{workerId}:
+    get:
+      tags: [Reviews]
+      summary: Semua ulasan seorang worker (no pagination)
+      parameters:
+        - name: workerId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Auth UUID pekerja
+      responses:
+        '200':
+          description: List ulasan
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Review'
+
+  /api/reviews/worker/{workerId}/page:
+    get:
+      tags: [Reviews]
+      summary: Ulasan paginated + statistik rating
+      parameters:
+        - name: workerId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        '200':
+          description: Paginated reviews + avg rating + distribusi bintang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewPage'
+
+  /api/reviews/with-photos:
+    post:
+      tags: [Reviews]
+      summary: Submit ulasan + foto (maks 5 foto)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [workerId, rating]
+              properties:
+                workerId:
+                  type: string
+                bookingId:
+                  type: string
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                comment:
+                  type: string
+                photos:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '201':
+          description: Ulasan berhasil disimpan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '400':
+          description: workerId atau rating tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
