@@ -37,6 +37,7 @@ type Review struct {
 	Comment   string      `db:"comment"    json:"comment"`
 	Photos    StringArray `db:"photos"     json:"photos"`
 	Date      string      `db:"date"       json:"date"`
+	EditCount int         `db:"edit_count" json:"editCount"`
 	CreatedAt time.Time   `db:"created_at" json:"createdAt"`
 }
 

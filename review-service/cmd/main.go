@@ -57,6 +57,7 @@ func main() {
 		protected.Use(middleware.JWTAuth([]byte(cfg.JWTSecret)))
 		{
 			protected.POST("/with-photos", h.CreateWithPhotos)
+			protected.PATCH("/:id", h.EditReview)
 		}
 	}
 

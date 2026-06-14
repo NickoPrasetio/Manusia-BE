@@ -30,8 +30,10 @@ func (r *ReviewRepository) Migrate(ctx context.Context) error {
 			comment    TEXT NOT NULL DEFAULT '',
 			photos     JSONB NOT NULL DEFAULT '[]',
 			date       TEXT NOT NULL,
+			edit_count INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)
+		);
+		ALTER TABLE reviews ADD COLUMN IF NOT EXISTS edit_count INT NOT NULL DEFAULT 0;
 	`)
 	return err
 }
@@ -41,14 +43,49 @@ func (r *ReviewRepository) Create(ctx context.Context, rev *model.Review) error 
 	return r.db.QueryRow(ctx, `
 		INSERT INTO reviews (worker_id, user_id, user_name, booking_id, rating, comment, photos, date)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		RETURNING id, created_at
+		RETURNING id, edit_count, created_at
 	`, rev.WorkerID, rev.UserID, rev.UserName, rev.BookingID, rev.Rating, rev.Comment, string(photos), rev.Date).
-		Scan(&rev.ID, &rev.CreatedAt)
+		Scan(&rev.ID, &rev.EditCount, &rev.CreatedAt)
+}
+
+func (r *ReviewRepository) FindByID(ctx context.Context, id string) (*model.Review, error) {
+	var rev model.Review
+	var photosJSON []byte
+	err := r.db.QueryRow(ctx, `
+		SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, edit_count, created_at
+		FROM reviews WHERE id=$1
+	`, id).Scan(
+		&rev.ID, &rev.WorkerID, &rev.UserID, &rev.UserName, &rev.BookingID,
+		&rev.Rating, &rev.Comment, &photosJSON, &rev.Date, &rev.EditCount, &rev.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_ = json.Unmarshal(photosJSON, &rev.Photos)
+	if rev.Photos == nil {
+		rev.Photos = model.StringArray{}
+	}
+	return &rev, nil
+}
+
+// Update modifies rating, comment, and optionally photos (nil = keep existing).
+func (r *ReviewRepository) Update(ctx context.Context, id string, rating int, comment string, photos *model.StringArray) error {
+	if photos == nil {
+		_, err := r.db.Exec(ctx, `
+			UPDATE reviews SET rating=$1, comment=$2, edit_count=edit_count+1 WHERE id=$3
+		`, rating, comment, id)
+		return err
+	}
+	photosJSON, _ := json.Marshal(photos)
+	_, err := r.db.Exec(ctx, `
+		UPDATE reviews SET rating=$1, comment=$2, photos=$3, edit_count=edit_count+1 WHERE id=$4
+	`, rating, comment, string(photosJSON), id)
+	return err
 }
 
 func (r *ReviewRepository) FindByWorker(ctx context.Context, workerID string) ([]model.Review, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, created_at
+		SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, edit_count, created_at
 		FROM reviews WHERE worker_id=$1 ORDER BY created_at DESC
 	`, workerID)
 	if err != nil {
@@ -98,7 +135,7 @@ func (r *ReviewRepository) FindPage(ctx context.Context, workerID string, page, 
 	// paginated reviews
 	offset := page * limit
 	reviewRows, err := r.db.Query(ctx,
-		`SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, created_at
+		`SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, edit_count, created_at
 		 FROM reviews WHERE worker_id=$1
 		 ORDER BY created_at DESC, id DESC
 		 LIMIT $2 OFFSET $3`,
@@ -124,7 +161,7 @@ func (r *ReviewRepository) FindGivenByUser(ctx context.Context, userID string, p
 
 	offset := page * limit
 	rows, err := r.db.Query(ctx,
-		`SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, created_at
+		`SELECT id, worker_id, user_id, user_name, booking_id, rating, comment, photos, date, edit_count, created_at
 		 FROM reviews WHERE user_id=$1
 		 ORDER BY created_at DESC, id DESC
 		 LIMIT $2 OFFSET $3`,
@@ -154,7 +191,7 @@ func scanReviews(rows pgx.Rows) ([]model.Review, error) {
 		var photosJSON []byte
 		err := rows.Scan(
 			&rev.ID, &rev.WorkerID, &rev.UserID, &rev.UserName, &rev.BookingID,
-			&rev.Rating, &rev.Comment, &photosJSON, &rev.Date, &rev.CreatedAt,
+			&rev.Rating, &rev.Comment, &photosJSON, &rev.Date, &rev.EditCount, &rev.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan review: %w", err)

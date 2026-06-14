@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,14 +16,16 @@ import (
 	"github.com/manusia/review-service/internal/config"
 	"github.com/manusia/review-service/internal/model"
 	"github.com/manusia/review-service/internal/repository"
+	"github.com/manusia/review-service/internal/service"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type ReviewHandler struct {
-	repo  *repository.ReviewRepository
-	cfg   *config.Config
-	minio *minio.Client
+	repo    *repository.ReviewRepository
+	svc     *service.ReviewService
+	cfg     *config.Config
+	minio   *minio.Client
 }
 
 func NewReviewHandler(repo *repository.ReviewRepository, cfg *config.Config) (*ReviewHandler, error) {
@@ -42,7 +45,8 @@ func NewReviewHandler(repo *repository.ReviewRepository, cfg *config.Config) (*R
 		_ = mc.SetBucketPolicy(ctx, cfg.MinioBucket, policy)
 	}
 
-	return &ReviewHandler{repo: repo, cfg: cfg, minio: mc}, nil
+	svc := service.NewReviewService(repo)
+	return &ReviewHandler{repo: repo, svc: svc, cfg: cfg, minio: mc}, nil
 }
 
 // GetByWorkerPage handles GET /api/reviews/worker/:workerId/page?page=0&limit=10
@@ -195,6 +199,66 @@ func (h *ReviewHandler) CreateWithPhotos(c *gin.Context) {
 	go h.updateRating(workerID)
 
 	c.JSON(http.StatusCreated, rev)
+}
+
+// EditReview handles PATCH /api/reviews/:id (multipart/form-data)
+func (h *ReviewHandler) EditReview(c *gin.Context) {
+	id     := c.Param("id")
+	userID := c.GetString("userID")
+
+	ratingStr := c.PostForm("rating")
+	comment   := c.PostForm("comment")
+
+	var rating int
+	fmt.Sscanf(ratingStr, "%d", &rating)
+	if rating < 1 || rating > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rating (1-5) wajib diisi"})
+		return
+	}
+
+	// Upload new photos if provided
+	var photos *model.StringArray
+	form, _ := c.MultipartForm()
+	if form != nil {
+		if files := form.File["photos"]; len(files) > 0 {
+			urls := make(model.StringArray, 0, len(files))
+			for _, fh := range files {
+				f, err := fh.Open()
+				if err != nil {
+					continue
+				}
+				data, _ := io.ReadAll(f)
+				f.Close()
+				ext     := strings.ToLower(filepath.Ext(fh.Filename))
+				objName := fmt.Sprintf("reviews/%s-%d%s", userID, time.Now().UnixNano(), ext)
+				reader  := bytes.NewReader(data)
+				_, err = h.minio.PutObject(c.Request.Context(), h.cfg.MinioBucket, objName, reader, int64(len(data)),
+					minio.PutObjectOptions{ContentType: fh.Header.Get("Content-Type")})
+				if err == nil {
+					urls = append(urls, fmt.Sprintf("%s/%s/%s", h.cfg.MinioPublicURL, h.cfg.MinioBucket, objName))
+				}
+			}
+			photos = &urls
+		}
+	}
+
+	rev, err := h.svc.Edit(c.Request.Context(), id, userID, rating, comment, photos)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrForbidden):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrEditLimitReach), errors.Is(err, service.ErrEditExpired):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	go h.updateRating(rev.WorkerID)
+	c.JSON(http.StatusOK, rev)
 }
 
 // updateRating menghitung ulang rata-rata rating dan PATCH ke user-service
