@@ -23,6 +23,7 @@ func main() {
 	userURL, _    := url.Parse(cfg.UserServiceURL)
 	bookingURL, _ := url.Parse(cfg.BookingServiceURL)
 	reviewURL, _  := url.Parse(cfg.ReviewServiceURL)
+	chatURL, _    := url.Parse(cfg.ChatServiceURL)
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -58,6 +59,8 @@ func main() {
 		{"/api/jobs", bookingURL},
 		{"/api/reviews", reviewURL},
 		{"/api/internal", userURL},
+		{"/api/chats", chatURL},
+		{"/ws/chat", chatURL},
 	}
 
 	// CORS headers that upstream services may send — strip them so the

@@ -28,17 +28,19 @@ func (s *StringArray) Scan(src interface{}) error {
 }
 
 type Review struct {
-	ID        string      `db:"id"         json:"id"`
-	WorkerID  string      `db:"worker_id"  json:"workerId"`
-	UserID    string      `db:"user_id"    json:"userId"`
-	UserName  string      `db:"user_name"  json:"userName"`
-	BookingID string      `db:"booking_id" json:"bookingId"`
-	Rating    int         `db:"rating"     json:"rating"`
-	Comment   string      `db:"comment"    json:"comment"`
-	Photos    StringArray `db:"photos"     json:"photos"`
-	Date      string      `db:"date"       json:"date"`
-	EditCount int         `db:"edit_count" json:"editCount"`
-	CreatedAt time.Time   `db:"created_at" json:"createdAt"`
+	ID           string      `db:"id"            json:"id"`
+	WorkerID     string      `db:"worker_id"     json:"workerId"`
+	WorkerName   string      `db:"worker_name"   json:"workerName"`
+	WorkerAvatar string      `db:"worker_avatar" json:"workerAvatar"`
+	UserID       string      `db:"user_id"       json:"userId"`
+	UserName     string      `db:"user_name"     json:"userName"`
+	BookingID    string      `db:"booking_id"    json:"bookingId"`
+	Rating       int         `db:"rating"        json:"rating"`
+	Comment      string      `db:"comment"       json:"comment"`
+	Photos       StringArray `db:"photos"        json:"photos"`
+	Date         string      `db:"date"          json:"date"`
+	EditCount    int         `db:"edit_count"    json:"editCount"`
+	CreatedAt    time.Time   `db:"created_at"    json:"createdAt"`
 }
 
 // RatingDist is a single star-level count for the distribution chart.

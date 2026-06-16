@@ -138,6 +138,8 @@ func (h *ReviewHandler) CreateWithPhotos(c *gin.Context) {
 	userNameStr, _ := userName.(string)
 
 	workerID := c.PostForm("workerId")
+	workerName := c.PostForm("workerName")
+	workerAvatar := c.PostForm("workerAvatar")
 	bookingID := c.PostForm("bookingId")
 	ratingStr := c.PostForm("rating")
 	comment := c.PostForm("comment")
@@ -180,14 +182,16 @@ func (h *ReviewHandler) CreateWithPhotos(c *gin.Context) {
 	}
 
 	rev := &model.Review{
-		WorkerID:  workerID,
-		UserID:    userID,
-		UserName:  userNameStr,
-		BookingID: bookingID,
-		Rating:    rating,
-		Comment:   comment,
-		Photos:    photoURLs,
-		Date:      time.Now().Format("2006-01-02"),
+		WorkerID:     workerID,
+		WorkerName:   workerName,
+		WorkerAvatar: workerAvatar,
+		UserID:       userID,
+		UserName:     userNameStr,
+		BookingID:    bookingID,
+		Rating:       rating,
+		Comment:      comment,
+		Photos:       photoURLs,
+		Date:         time.Now().Format("2006-01-02"),
 	}
 
 	if err := h.repo.Create(c.Request.Context(), rev); err != nil {

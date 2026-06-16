@@ -8,6 +8,7 @@ type Config struct {
 	UserServiceURL    string
 	BookingServiceURL string
 	ReviewServiceURL  string
+	ChatServiceURL    string
 }
 
 func Load() *Config {
@@ -17,6 +18,7 @@ func Load() *Config {
 		UserServiceURL:    getEnv("USER_SERVICE_URL", "http://localhost:8082"),
 		BookingServiceURL: getEnv("BOOKING_SERVICE_URL", "http://localhost:8083"),
 		ReviewServiceURL:  getEnv("REVIEW_SERVICE_URL", "http://localhost:8084"),
+		ChatServiceURL:    getEnv("CHAT_SERVICE_URL", "http://localhost:8085"),
 	}
 }
 
