@@ -1,25 +1,21 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/manusia/booking-service/internal/model"
-	"github.com/manusia/booking-service/internal/repository"
+	"github.com/manusia/booking-service/internal/service"
 )
 
 type JobHandler struct {
-	repo        *repository.JobRepository
-	bookingRepo *repository.BookingRepository
+	svc *service.JobService
 }
 
-func NewJobHandler(db *pgxpool.Pool) *JobHandler {
-	return &JobHandler{
-		repo:        repository.NewJobRepository(db),
-		bookingRepo: repository.NewBookingRepository(db),
-	}
+func NewJobHandler(svc *service.JobService) *JobHandler {
+	return &JobHandler{svc: svc}
 }
 
 // POST /api/jobs
@@ -31,26 +27,8 @@ func (h *JobHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	j := &model.Job{
-		CustomerID:   customerID,
-		CustomerName: req.CustomerName,
-		Title:        req.Title,
-		Description:  req.Description,
-		BudgetPerDay: req.BudgetPerDay,
-		TodoList:     req.TodoList,
-		DurationDays: req.DurationDays,
-		City:         req.City,
-		Latitude:     req.Latitude,
-		Longitude:    req.Longitude,
-		Category:     req.Category,
-		Status:       model.JobStatusOpen,
-	}
-	if j.TodoList == nil {
-		j.TodoList = []string{}
-	}
-
-	if err := h.repo.Create(c.Request.Context(), j); err != nil {
+	j, err := h.svc.Create(c.Request.Context(), customerID, &req)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -61,20 +39,17 @@ func (h *JobHandler) Create(c *gin.Context) {
 // Customer melihat daftar job posting miliknya.
 func (h *JobHandler) GetMy(c *gin.Context) {
 	customerID := c.GetString("userID")
-	jobs, err := h.repo.FindByCustomer(c.Request.Context(), customerID)
+	jobs, err := h.svc.GetByCustomer(c.Request.Context(), customerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if jobs == nil {
-		jobs = []model.Job{}
 	}
 	c.JSON(http.StatusOK, jobs)
 }
 
 // GET /api/jobs/:id
 func (h *JobHandler) GetByID(c *gin.Context) {
-	j, err := h.repo.FindByID(c.Request.Context(), c.Param("id"))
+	j, err := h.svc.GetByID(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -86,35 +61,16 @@ func (h *JobHandler) GetByID(c *gin.Context) {
 // Customer menutup job posting (tidak menerima pelamar baru).
 func (h *JobHandler) Close(c *gin.Context) {
 	customerID := c.GetString("userID")
-	j, err := h.repo.FindByID(c.Request.Context(), c.Param("id"))
+	j, err := h.svc.Close(c.Request.Context(), c.Param("id"), customerID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		writeJobError(c, err)
 		return
 	}
-	if j.CustomerID != customerID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "bukan pemilik job ini"})
-		return
-	}
-	if j.Status == model.JobStatusClosed {
-		c.JSON(http.StatusConflict, gin.H{"error": "job sudah ditutup"})
-		return
-	}
-	if err := h.repo.UpdateStatus(c.Request.Context(), j.ID, model.JobStatusClosed); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	j.Status = model.JobStatusClosed
 	c.JSON(http.StatusOK, j)
 }
 
 // GET /api/jobs/nearby?lat=&lon=&radius=&category=&page=&limit=
 // Worker melihat job terbuka di sekitar lokasinya (paginated).
-// Query params:
-//   lat, lon  — wajib (koordinat worker)
-//   radius    — opsional, km (default 50)
-//   category  — opsional: TASK | PROJECT | EVENT (kosong = semua)
-//   page      — opsional, 1-based (default 1)
-//   limit     — opsional, 1–50 (default 10)
 func (h *JobHandler) GetNearby(c *gin.Context) {
 	lat, err1 := strconv.ParseFloat(c.Query("lat"), 64)
 	lon, err2 := strconv.ParseFloat(c.Query("lon"), 64)
@@ -148,13 +104,10 @@ func (h *JobHandler) GetNearby(c *gin.Context) {
 
 	offset := (page - 1) * limit
 
-	jobs, total, err := h.repo.FindNearby(c.Request.Context(), lat, lon, radius, category, limit, offset)
+	jobs, total, err := h.svc.GetNearby(c.Request.Context(), lat, lon, radius, category, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if jobs == nil {
-		jobs = []model.Job{}
 	}
 
 	c.JSON(http.StatusOK, model.NearbyJobsResponse{
@@ -168,10 +121,9 @@ func (h *JobHandler) GetNearby(c *gin.Context) {
 
 // POST /api/jobs/:id/apply
 // Worker menawarkan diri untuk job posting.
-// Membuat booking baru: worker=currentUser, customer=job.CustomerID
 func (h *JobHandler) ApplyToJob(c *gin.Context) {
-	workerID   := c.GetString("userID")
-	jobID      := c.Param("id")
+	workerID := c.GetString("userID")
+	jobID := c.Param("id")
 
 	var req struct {
 		WorkerName   string `json:"workerName"`
@@ -180,46 +132,31 @@ func (h *JobHandler) ApplyToJob(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	// Ambil job
-	job, err := h.repo.FindByID(c.Request.Context(), jobID)
+	b, err := h.svc.ApplyToJob(c.Request.Context(), service.ApplyToJobInput{
+		JobID:        jobID,
+		WorkerID:     workerID,
+		WorkerName:   req.WorkerName,
+		WorkerAvatar: req.WorkerAvatar,
+		Notes:        req.Notes,
+	})
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Job tidak ditemukan"})
+		writeJobError(c, err)
 		return
 	}
-	if job.Status != model.JobStatusOpen {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Job sudah tidak tersedia"})
-		return
-	}
-	if job.CustomerID == workerID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Tidak bisa melamar job milik sendiri"})
-		return
-	}
-
-	// Buat booking
-	b := &model.Booking{
-		WorkerID:      workerID,
-		WorkerName:    req.WorkerName,
-		WorkerAvatar:  req.WorkerAvatar,
-		CustomerID:    job.CustomerID,
-		CustomerName:  job.CustomerName,
-		Address:       job.City,
-		City:          job.City,
-		Latitude:      job.Latitude,
-		Longitude:     job.Longitude,
-		BookingDate:   "",
-		StartTime:     "08:00",
-		DurationDays:  job.DurationDays,
-		PaymentMethod: "CASH",
-		Notes:         req.Notes,
-		JobID:         jobID,
-		JobTitle:      job.Title,
-		Status:        model.StatusPending,
-	}
-
-	if err := h.bookingRepo.Create(c.Request.Context(), b); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat penawaran: " + err.Error()})
-		return
-	}
-
 	c.JSON(http.StatusCreated, b)
+}
+
+func writeJobError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrJobNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrJobForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrJobAlreadyClosed):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrJobNotOpen), errors.Is(err, service.ErrJobSelfApply):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }

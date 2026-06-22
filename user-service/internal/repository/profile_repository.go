@@ -79,7 +79,15 @@ func (r *ProfileRepository) FindAll(ctx context.Context, search string, availabl
 	return scanRows(rows)
 }
 
-func (r *ProfileRepository) FindPage(ctx context.Context, page, size int, search string, available *bool) (*model.ProfilePage, error) {
+func (r *ProfileRepository) FindPage(ctx context.Context, page, size int, search string, available *bool, lat, lng, radiusKm *float64) (*model.ProfilePage, error) {
+	if lat != nil && lng != nil {
+		radius := 3.0
+		if radiusKm != nil {
+			radius = *radiusKm
+		}
+		return r.findPageNearby(ctx, page, size, search, available, *lat, *lng, radius)
+	}
+
 	countQ := `SELECT COUNT(*) FROM user_profiles WHERE 1=1`
 	dataQ := baseSelect() + ` WHERE 1=1`
 	args, idx := buildFilters(&countQ, search, available, 1)
@@ -94,7 +102,80 @@ func (r *ProfileRepository) FindPage(ctx context.Context, page, size int, search
 	dataQ += fmt.Sprintf(" ORDER BY rating DESC, created_at ASC, id ASC LIMIT $%d OFFSET $%d", nextIdx, nextIdx+1)
 	dataArgs = append(dataArgs, size, page*size)
 
-	_ = idx // suppress unused warning
+	_ = idx
+
+	rows, err := r.db.Query(ctx, dataQ, dataArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	profiles, err := scanRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(size)))
+	return &model.ProfilePage{
+		Content:       profiles,
+		TotalElements: total,
+		TotalPages:    totalPages,
+		Number:        page,
+		Last:          page >= totalPages-1,
+	}, nil
+}
+
+// havSQL computes great-circle distance (km) between ($1,$2) and each row's (latitude,longitude).
+// $1 = user lat, $2 = user lng — referenced multiple times, which PostgreSQL handles correctly.
+const havSQL = `(6371.0 * 2.0 * asin(sqrt(
+	power(sin(radians(($1 - latitude) / 2.0)), 2) +
+	cos(radians($1)) * cos(radians(latitude)) *
+	power(sin(radians(($2 - longitude) / 2.0)), 2)
+)))`
+
+func (r *ProfileRepository) findPageNearby(ctx context.Context, page, size int, search string, available *bool, lat, lng, radiusKm float64) (*model.ProfilePage, error) {
+	// $1=lat, $2=lng are fixed; additional filter args start at $3
+	args := []interface{}{lat, lng}
+	idx := 3
+
+	extraWhere := " AND latitude IS NOT NULL AND longitude IS NOT NULL"
+	if search != "" {
+		extraWhere += fmt.Sprintf(` AND (name ILIKE $%d OR location ILIKE $%d OR bio ILIKE $%d)`, idx, idx, idx)
+		args = append(args, "%"+search+"%")
+		idx++
+	}
+	if available != nil && *available {
+		extraWhere += fmt.Sprintf(` AND is_available = $%d`, idx)
+		args = append(args, true)
+		idx++
+	}
+
+	countQ := fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT %s AS dist_km
+			FROM user_profiles WHERE 1=1%s
+		) sub WHERE dist_km <= $%d`, havSQL, extraWhere, idx)
+
+	countArgs := append(append([]interface{}{}, args...), radiusKm)
+
+	var total int
+	if err := r.db.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	dataQ := fmt.Sprintf(`
+		SELECT id, auth_id, name, avatar, age, experience, rating, total_reviews,
+		       specializations, location, price_per_day, is_available, work_status,
+		       bio, latitude, longitude, gender, birth_place, created_at
+		FROM (
+			SELECT *, %s AS dist_km
+			FROM user_profiles WHERE 1=1%s
+		) sub
+		WHERE dist_km <= $%d
+		ORDER BY dist_km ASC
+		LIMIT $%d OFFSET $%d`, havSQL, extraWhere, idx, idx+1, idx+2)
+
+	dataArgs := append(append([]interface{}{}, args...), radiusKm, size, page*size)
 
 	rows, err := r.db.Query(ctx, dataQ, dataArgs...)
 	if err != nil {

@@ -10,18 +10,31 @@ import (
 
 	"github.com/manusia/user-service/internal/config"
 	"github.com/manusia/user-service/internal/model"
-	"github.com/manusia/user-service/internal/repository"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// ProfileRepository is the persistence contract UserService depends on —
+// satisfied implicitly by *repository.ProfileRepository.
+type ProfileRepository interface {
+	FindAll(ctx context.Context, search string, available *bool) ([]model.UserProfile, error)
+	FindPage(ctx context.Context, page, size int, search string, available *bool, lat, lng, radiusKm *float64) (*model.ProfilePage, error)
+	FindByID(ctx context.Context, id string) (*model.UserProfile, error)
+	FindByAuthID(ctx context.Context, authID string) (*model.UserProfile, error)
+	Create(ctx context.Context, p *model.UserProfile) error
+	Update(ctx context.Context, id string, req *model.UpdateProfileRequest) error
+	UpdateAvatar(ctx context.Context, id, avatarURL string) error
+	UpdateAvailabilityByAuthID(ctx context.Context, authID string, isAvailable bool, lat, lon *float64) (*model.UserProfile, error)
+	UpdateRating(ctx context.Context, authID string, rating float64, totalReviews int) error
+}
+
 type UserService struct {
-	repo  *repository.ProfileRepository
+	repo  ProfileRepository
 	cfg   *config.Config
 	minio *minio.Client
 }
 
-func NewUserService(repo *repository.ProfileRepository, cfg *config.Config) (*UserService, error) {
+func NewUserService(repo ProfileRepository, cfg *config.Config) (*UserService, error) {
 	mc, err := minio.New(cfg.MinioEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinioAccess, cfg.MinioSecret, ""),
 		Secure: false,
@@ -50,8 +63,8 @@ func (s *UserService) ListAll(ctx context.Context, search string, available *boo
 	return s.repo.FindAll(ctx, search, available)
 }
 
-func (s *UserService) ListPage(ctx context.Context, page, size int, search string, available *bool) (*model.ProfilePage, error) {
-	return s.repo.FindPage(ctx, page, size, search, available)
+func (s *UserService) ListPage(ctx context.Context, page, size int, search string, available *bool, lat, lng, radiusKm *float64) (*model.ProfilePage, error) {
+	return s.repo.FindPage(ctx, page, size, search, available, lat, lng, radiusKm)
 }
 
 func (s *UserService) GetByID(ctx context.Context, id string) (*model.UserProfile, error) {

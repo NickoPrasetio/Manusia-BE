@@ -12,6 +12,7 @@ import (
 	"github.com/manusia/booking-service/internal/handler"
 	"github.com/manusia/booking-service/internal/middleware"
 	"github.com/manusia/booking-service/internal/repository"
+	"github.com/manusia/booking-service/internal/service"
 )
 
 func main() {
@@ -33,8 +34,11 @@ func main() {
 		log.Fatalf("migrate jobs: %v", err)
 	}
 
-	h := handler.NewBookingHandler(db)
-	jh := handler.NewJobHandler(db)
+	bookingSvc := service.NewBookingService(repo)
+	jobSvc := service.NewJobService(jobRepo, repo)
+
+	h := handler.NewBookingHandler(bookingSvc)
+	jh := handler.NewJobHandler(jobSvc)
 	jwtMiddleware := middleware.JWTAuth([]byte(cfg.JWTSecret))
 
 	r := gin.Default()
@@ -82,7 +86,3 @@ func main() {
 		log.Fatal(err)
 	}
 }
-
-// ensure repos are used
-var _ = (*repository.BookingRepository)(nil)
-var _ = (*repository.JobRepository)(nil)

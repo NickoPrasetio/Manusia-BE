@@ -60,3 +60,12 @@ type ReviewPage struct {
 	Last      bool         `json:"last"`
 }
 
+// GivenReviewPage is the paginated response for reviews a user has given.
+type GivenReviewPage struct {
+	Reviews []Review `json:"reviews"`
+	Total   int      `json:"total"`
+	Page    int      `json:"page"`
+	Limit   int      `json:"limit"`
+	Last    bool     `json:"last"`
+}
+

@@ -7,16 +7,26 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/manusia/auth-service/internal/model"
-	"github.com/manusia/auth-service/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// UserRepository is the persistence contract AuthService depends on —
+// satisfied implicitly by *repository.UserRepository.
+type UserRepository interface {
+	Create(ctx context.Context, u *model.User) error
+	FindByEmail(ctx context.Context, email string) (*model.User, error)
+	FindByID(ctx context.Context, id string) (*model.User, error)
+	UpdateProfile(ctx context.Context, id, name, phone string) error
+	UpdatePassword(ctx context.Context, id, newHash string) error
+	UpdateAvatar(ctx context.Context, id, avatarURL string) error
+}
+
 type AuthService struct {
-	repo      *repository.UserRepository
+	repo      UserRepository
 	jwtSecret []byte
 }
 
-func NewAuthService(repo *repository.UserRepository, jwtSecret string) *AuthService {
+func NewAuthService(repo UserRepository, jwtSecret string) *AuthService {
 	return &AuthService{repo: repo, jwtSecret: []byte(jwtSecret)}
 }
 

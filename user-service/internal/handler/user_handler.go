@@ -48,7 +48,23 @@ func (h *UserHandler) ListPage(c *gin.Context) {
 		b := true
 		available = &b
 	}
-	result, err := h.svc.ListPage(c.Request.Context(), page, size, search, available)
+	var lat, lng, radiusKm *float64
+	if latStr := c.Query("lat"); latStr != "" {
+		if v, err := strconv.ParseFloat(latStr, 64); err == nil {
+			lat = &v
+		}
+	}
+	if lngStr := c.Query("lng"); lngStr != "" {
+		if v, err := strconv.ParseFloat(lngStr, 64); err == nil {
+			lng = &v
+		}
+	}
+	if rStr := c.Query("radius"); rStr != "" {
+		if v, err := strconv.ParseFloat(rStr, 64); err == nil && v > 0 {
+			radiusKm = &v
+		}
+	}
+	result, err := h.svc.ListPage(c.Request.Context(), page, size, search, available, lat, lng, radiusKm)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

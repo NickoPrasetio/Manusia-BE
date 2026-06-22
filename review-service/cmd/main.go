@@ -12,6 +12,7 @@ import (
 	"github.com/manusia/review-service/internal/handler"
 	"github.com/manusia/review-service/internal/middleware"
 	"github.com/manusia/review-service/internal/repository"
+	"github.com/manusia/review-service/internal/service"
 )
 
 func main() {
@@ -28,7 +29,9 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	h, err := handler.NewReviewHandler(repo, cfg)
+	svc := service.NewReviewService(repo, cfg.UserServiceURL)
+
+	h, err := handler.NewReviewHandler(svc, cfg)
 	if err != nil {
 		log.Fatalf("handler init: %v", err)
 	}

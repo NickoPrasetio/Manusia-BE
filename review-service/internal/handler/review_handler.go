@@ -3,7 +3,6 @@ package handler
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,20 +14,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/manusia/review-service/internal/config"
 	"github.com/manusia/review-service/internal/model"
-	"github.com/manusia/review-service/internal/repository"
 	"github.com/manusia/review-service/internal/service"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type ReviewHandler struct {
-	repo    *repository.ReviewRepository
-	svc     *service.ReviewService
-	cfg     *config.Config
-	minio   *minio.Client
+	svc   *service.ReviewService
+	cfg   *config.Config
+	minio *minio.Client
 }
 
-func NewReviewHandler(repo *repository.ReviewRepository, cfg *config.Config) (*ReviewHandler, error) {
+func NewReviewHandler(svc *service.ReviewService, cfg *config.Config) (*ReviewHandler, error) {
 	mc, err := minio.New(cfg.MinioEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinioAccess, cfg.MinioSecret, ""),
 		Secure: false,
@@ -45,8 +42,7 @@ func NewReviewHandler(repo *repository.ReviewRepository, cfg *config.Config) (*R
 		_ = mc.SetBucketPolicy(ctx, cfg.MinioBucket, policy)
 	}
 
-	svc := service.NewReviewService(repo)
-	return &ReviewHandler{repo: repo, svc: svc, cfg: cfg, minio: mc}, nil
+	return &ReviewHandler{svc: svc, cfg: cfg, minio: mc}, nil
 }
 
 // GetByWorkerPage handles GET /api/reviews/worker/:workerId/page?page=0&limit=10
@@ -64,37 +60,20 @@ func (h *ReviewHandler) GetByWorkerPage(c *gin.Context) {
 		page = 0
 	}
 
-	reviews, total, avg, dist, err := h.repo.FindPage(c.Request.Context(), workerID, page, limit)
+	result, err := h.svc.GetByWorkerPage(c.Request.Context(), workerID, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if reviews == nil {
-		reviews = []model.Review{}
-	}
-
-	last := (page+1)*limit >= total
-
-	c.JSON(http.StatusOK, model.ReviewPage{
-		Reviews:   reviews,
-		Total:     total,
-		AvgRating: avg,
-		Dist:      dist,
-		Page:      page,
-		Limit:     limit,
-		Last:      last,
-	})
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *ReviewHandler) GetByWorker(c *gin.Context) {
 	workerID := c.Param("workerId")
-	reviews, err := h.repo.FindByWorker(c.Request.Context(), workerID)
+	reviews, err := h.svc.GetByWorker(c.Request.Context(), workerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if reviews == nil {
-		reviews = []model.Review{}
 	}
 	c.JSON(http.StatusOK, reviews)
 }
@@ -113,23 +92,12 @@ func (h *ReviewHandler) GetGivenByUser(c *gin.Context) {
 		page = 0
 	}
 
-	reviews, total, err := h.repo.FindGivenByUser(c.Request.Context(), userID, page, limit)
+	result, err := h.svc.GetGivenByUser(c.Request.Context(), userID, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if reviews == nil {
-		reviews = []model.Review{}
-	}
-
-	last := (page+1)*limit >= total
-	c.JSON(http.StatusOK, gin.H{
-		"reviews": reviews,
-		"total":   total,
-		"page":    page,
-		"limit":   limit,
-		"last":    last,
-	})
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *ReviewHandler) CreateWithPhotos(c *gin.Context) {
@@ -194,24 +162,21 @@ func (h *ReviewHandler) CreateWithPhotos(c *gin.Context) {
 		Date:         time.Now().Format("2006-01-02"),
 	}
 
-	if err := h.repo.Create(c.Request.Context(), rev); err != nil {
+	if err := h.svc.CreateReview(c.Request.Context(), rev); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Update rating di user-service secara langsung (async)
-	go h.updateRating(workerID)
 
 	c.JSON(http.StatusCreated, rev)
 }
 
 // EditReview handles PATCH /api/reviews/:id (multipart/form-data)
 func (h *ReviewHandler) EditReview(c *gin.Context) {
-	id     := c.Param("id")
+	id := c.Param("id")
 	userID := c.GetString("userID")
 
 	ratingStr := c.PostForm("rating")
-	comment   := c.PostForm("comment")
+	comment := c.PostForm("comment")
 
 	var rating int
 	fmt.Sscanf(ratingStr, "%d", &rating)
@@ -233,9 +198,9 @@ func (h *ReviewHandler) EditReview(c *gin.Context) {
 				}
 				data, _ := io.ReadAll(f)
 				f.Close()
-				ext     := strings.ToLower(filepath.Ext(fh.Filename))
+				ext := strings.ToLower(filepath.Ext(fh.Filename))
 				objName := fmt.Sprintf("reviews/%s-%d%s", userID, time.Now().UnixNano(), ext)
-				reader  := bytes.NewReader(data)
+				reader := bytes.NewReader(data)
 				_, err = h.minio.PutObject(c.Request.Context(), h.cfg.MinioBucket, objName, reader, int64(len(data)),
 					minio.PutObjectOptions{ContentType: fh.Header.Get("Content-Type")})
 				if err == nil {
@@ -261,32 +226,5 @@ func (h *ReviewHandler) EditReview(c *gin.Context) {
 		return
 	}
 
-	go h.updateRating(rev.WorkerID)
 	c.JSON(http.StatusOK, rev)
-}
-
-// updateRating menghitung ulang rata-rata rating dan PATCH ke user-service
-func (h *ReviewHandler) updateRating(workerID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	avg, count, err := h.repo.AverageRating(ctx, workerID)
-	if err != nil {
-		return
-	}
-
-	url := fmt.Sprintf("%s/api/internal/users/%s/rating", h.cfg.UserServiceURL, workerID)
-	body, _ := json.Marshal(map[string]interface{}{
-		"rating":       avg,
-		"totalReviews": count,
-	})
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	_, _ = client.Do(req)
 }
