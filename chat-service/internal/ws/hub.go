@@ -1,6 +1,19 @@
 package ws
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+var wsActiveConnections = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "ws_active_connections",
+	Help: "Current number of active WebSocket connections.",
+})
+
+func init() {
+	prometheus.MustRegister(wsActiveConnections)
+}
 
 // Hub keeps track of which users currently have an open WebSocket connection
 // (possibly more than one, e.g. multiple browser tabs) so messages and read
@@ -21,6 +34,7 @@ func (h *Hub) Register(userID string, c *Client) {
 		h.clients[userID] = make(map[*Client]bool)
 	}
 	h.clients[userID][c] = true
+	wsActiveConnections.Inc()
 }
 
 func (h *Hub) Unregister(userID string, c *Client) {
@@ -31,6 +45,7 @@ func (h *Hub) Unregister(userID string, c *Client) {
 		if len(conns) == 0 {
 			delete(h.clients, userID)
 		}
+		wsActiveConnections.Dec()
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/manusia/chat-service/internal/config"
 	"github.com/manusia/chat-service/internal/handler"
@@ -45,6 +46,8 @@ func main() {
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: false,
 	}))
+	r.Use(metricsMiddleware("chat-service"))
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "chat-service"})
@@ -64,6 +67,11 @@ func main() {
 	}
 
 	r.GET("/ws/chat", middleware.WSAuth([]byte(cfg.JWTSecret)), h.ServeWS)
+
+	internalAPI := r.Group("/api/internal/chats")
+	{
+		internalAPI.POST("/system-message", h.SendSystemMessage)
+	}
 
 	log.Printf("chat-service listening on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

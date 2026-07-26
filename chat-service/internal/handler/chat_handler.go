@@ -188,6 +188,52 @@ func (h *ChatHandler) UploadPhoto(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"url": url})
 }
 
+// ── Internal (service-to-service, no JWT) ──────────────────────────────────
+
+type systemMessageBody struct {
+	SenderID        string `json:"senderId"`
+	SenderName      string `json:"senderName"`
+	SenderAvatar    string `json:"senderAvatar"`
+	RecipientID     string `json:"recipientId"`
+	RecipientName   string `json:"recipientName"`
+	RecipientAvatar string `json:"recipientAvatar"`
+	Content         string `json:"content"`
+}
+
+// SendSystemMessage handles POST /api/internal/chats/system-message — lets
+// other backend services (e.g. review-service filing an appeal) push a
+// message into an existing/new conversation on a user's behalf, without
+// going through the WebSocket. Trusted via the internal Docker network,
+// same trust model as user-service's /api/internal/users/:authId/rating.
+func (h *ChatHandler) SendSystemMessage(c *gin.Context) {
+	var body systemMessageBody
+	if err := c.ShouldBindJSON(&body); err != nil || body.SenderID == "" || body.RecipientID == "" || body.Content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "senderId, recipientId, dan content wajib diisi"})
+		return
+	}
+
+	conv, err := h.svc.GetOrCreateConversation(
+		c.Request.Context(), body.SenderID, body.SenderName, body.SenderAvatar,
+		body.RecipientID, body.RecipientName, body.RecipientAvatar,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	msg, err := h.svc.SendMessage(c.Request.Context(), conv.ID, body.SenderID, body.Content, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{"type": "message", "message": msg})
+	h.hub.SendToUser(body.SenderID, payload)
+	h.hub.SendToUser(body.RecipientID, payload)
+
+	c.JSON(http.StatusOK, gin.H{"conversationId": conv.ID, "messageId": msg.ID})
+}
+
 func writeServiceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotFound):

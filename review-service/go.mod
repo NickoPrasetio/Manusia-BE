@@ -8,4 +8,5 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/minio/minio-go/v7 v7.0.73
+	github.com/prometheus/client_golang v1.23.2
 )

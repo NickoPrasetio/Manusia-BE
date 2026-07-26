@@ -4,10 +4,14 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/manusia/review-service/internal/analysisclient"
+	"github.com/manusia/review-service/internal/chatclient"
 	"github.com/manusia/review-service/internal/config"
 	"github.com/manusia/review-service/internal/handler"
 	"github.com/manusia/review-service/internal/middleware"
@@ -36,6 +40,15 @@ func main() {
 		log.Fatalf("handler init: %v", err)
 	}
 
+	appealRepo := repository.NewAppealRepository(db)
+	if err := appealRepo.Migrate(context.Background()); err != nil {
+		log.Fatalf("migrate appeals: %v", err)
+	}
+	notifier := chatclient.NewClient(cfg.ChatServiceURL, cfg.FrontendURL)
+	moderator := analysisclient.NewClient(cfg.ReviewAnalysisServiceURL)
+	appealSvc := service.NewAppealService(appealRepo, repo, notifier, moderator, time.Duration(cfg.AppealDeadlineHours)*time.Hour)
+	appealHandler := handler.NewAppealHandler(appealSvc)
+
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowAllOrigins:  true,
@@ -43,6 +56,8 @@ func main() {
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: false,
 	}))
+	r.Use(metricsMiddleware("review-service"))
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "review-service"})
@@ -61,8 +76,22 @@ func main() {
 		{
 			protected.POST("/with-photos", h.CreateWithPhotos)
 			protected.PATCH("/:id", h.EditReview)
+			protected.POST("/:id/appeal", appealHandler.CreateAppeal)
+			protected.GET("/appeals/:appealId", appealHandler.GetAppeal)
+			protected.POST("/appeals/:appealId/respond", appealHandler.RespondAppeal)
 		}
 	}
+
+	go func() {
+		interval := time.Duration(cfg.ModerationIntervalSeconds) * time.Second
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := appealSvc.RunModerationCycle(context.Background()); err != nil {
+				log.Printf("moderation cycle error: %v", err)
+			}
+		}
+	}()
 
 	log.Printf("review-service listening on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

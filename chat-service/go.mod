@@ -9,4 +9,5 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/minio/minio-go/v7 v7.0.73
+	github.com/prometheus/client_golang v1.23.2
 )

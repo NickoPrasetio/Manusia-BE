@@ -41,6 +41,14 @@ type Review struct {
 	Date         string      `db:"date"          json:"date"`
 	EditCount    int         `db:"edit_count"    json:"editCount"`
 	CreatedAt    time.Time   `db:"created_at"    json:"createdAt"`
+
+	// Appeal info — populated only by queries that LEFT JOIN review_appeals
+	// (currently FindPage, used by the "my-reviews" page). Nil when no
+	// appeal has been filed for this review.
+	AppealID     *string `json:"appealId,omitempty"`
+	AppealStatus *string `json:"appealStatus,omitempty"`
+	AIVerdict    *string `json:"aiVerdict,omitempty"`
+	AIReasoning  *string `json:"aiReasoning,omitempty"`
 }
 
 // RatingDist is a single star-level count for the distribution chart.

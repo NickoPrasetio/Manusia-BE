@@ -13,6 +13,10 @@ import (
 const selectColumns = `id, worker_id, worker_name, worker_avatar, user_id, user_name, booking_id,
 	rating, comment, photos, date, edit_count, created_at`
 
+const qualifiedSelectColumns = `reviews.id, reviews.worker_id, reviews.worker_name, reviews.worker_avatar,
+	reviews.user_id, reviews.user_name, reviews.booking_id, reviews.rating, reviews.comment, reviews.photos,
+	reviews.date, reviews.edit_count, reviews.created_at`
+
 type ReviewRepository struct {
 	db *pgxpool.Pool
 }
@@ -136,12 +140,15 @@ func (r *ReviewRepository) FindPage(ctx context.Context, workerID string, page, 
 		dist[i] = model.RatingDist{Star: star, Count: distMap[star]}
 	}
 
-	// paginated reviews
+	// paginated reviews — LEFT JOIN review_appeals so the caller (my-reviews
+	// page) can show appeal status inline without extra requests.
 	offset := page * limit
 	reviewRows, err := r.db.Query(ctx,
-		`SELECT `+selectColumns+`
-		 FROM reviews WHERE worker_id=$1
-		 ORDER BY created_at DESC, id DESC
+		`SELECT `+qualifiedSelectColumns+`, ra.id, ra.status, NULLIF(ra.ai_verdict, ''), NULLIF(ra.ai_reasoning, '')
+		 FROM reviews
+		 LEFT JOIN review_appeals ra ON ra.review_id = reviews.id
+		 WHERE reviews.worker_id=$1
+		 ORDER BY reviews.created_at DESC, reviews.id DESC
 		 LIMIT $2 OFFSET $3`,
 		workerID, limit, offset)
 	if err != nil {
@@ -149,8 +156,24 @@ func (r *ReviewRepository) FindPage(ctx context.Context, workerID string, page, 
 	}
 	defer reviewRows.Close()
 
-	reviews, err := scanReviews(reviewRows)
-	if err != nil {
+	var reviews []model.Review
+	for reviewRows.Next() {
+		var rev model.Review
+		var photosJSON []byte
+		if err := reviewRows.Scan(
+			&rev.ID, &rev.WorkerID, &rev.WorkerName, &rev.WorkerAvatar, &rev.UserID, &rev.UserName, &rev.BookingID,
+			&rev.Rating, &rev.Comment, &photosJSON, &rev.Date, &rev.EditCount, &rev.CreatedAt,
+			&rev.AppealID, &rev.AppealStatus, &rev.AIVerdict, &rev.AIReasoning,
+		); err != nil {
+			return nil, 0, 0, nil, fmt.Errorf("scan review with appeal: %w", err)
+		}
+		_ = json.Unmarshal(photosJSON, &rev.Photos)
+		if rev.Photos == nil {
+			rev.Photos = model.StringArray{}
+		}
+		reviews = append(reviews, rev)
+	}
+	if err := reviewRows.Err(); err != nil {
 		return nil, 0, 0, nil, err
 	}
 	return reviews, total, avg, dist, nil
