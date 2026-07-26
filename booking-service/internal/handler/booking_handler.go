@@ -55,16 +55,18 @@ func (h *BookingHandler) GetMyOrders(c *gin.Context) {
 }
 
 func (h *BookingHandler) GetByID(c *gin.Context) {
-	b, err := h.svc.GetByID(c.Request.Context(), c.Param("id"))
+	userID := c.GetString("userID")
+	b, err := h.svc.GetByID(c.Request.Context(), c.Param("id"), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		writeBookingError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, b)
 }
 
 func (h *BookingHandler) Confirm(c *gin.Context) {
-	b, err := h.svc.Confirm(c.Request.Context(), c.Param("id"))
+	userID := c.GetString("userID")
+	b, err := h.svc.Confirm(c.Request.Context(), c.Param("id"), userID)
 	if err != nil {
 		writeBookingError(c, err)
 		return
@@ -73,7 +75,8 @@ func (h *BookingHandler) Confirm(c *gin.Context) {
 }
 
 func (h *BookingHandler) Complete(c *gin.Context) {
-	b, err := h.svc.Complete(c.Request.Context(), c.Param("id"))
+	userID := c.GetString("userID")
+	b, err := h.svc.Complete(c.Request.Context(), c.Param("id"), userID)
 	if err != nil {
 		writeBookingError(c, err)
 		return
@@ -82,7 +85,8 @@ func (h *BookingHandler) Complete(c *gin.Context) {
 }
 
 func (h *BookingHandler) Cancel(c *gin.Context) {
-	b, err := h.svc.Cancel(c.Request.Context(), c.Param("id"))
+	userID := c.GetString("userID")
+	b, err := h.svc.Cancel(c.Request.Context(), c.Param("id"), userID)
 	if err != nil {
 		writeBookingError(c, err)
 		return
@@ -125,6 +129,8 @@ func writeBookingError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrBookingNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrNotPending), errors.Is(err, service.ErrNotConfirmed), errors.Is(err, service.ErrAlreadyFinalized):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:

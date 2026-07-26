@@ -113,7 +113,7 @@ func TestBookingService_Confirm(t *testing.T) {
 		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
 		svc := service.NewBookingService(repo)
 
-		b, err := svc.Confirm(ctx, "b1")
+		b, err := svc.Confirm(ctx, "b1", "cust-1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -127,7 +127,7 @@ func TestBookingService_Confirm(t *testing.T) {
 		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusConfirmed)
 		svc := service.NewBookingService(repo)
 
-		_, err := svc.Confirm(ctx, "b1")
+		_, err := svc.Confirm(ctx, "b1", "cust-1")
 		if err != service.ErrNotPending {
 			t.Errorf("expected ErrNotPending, got %v", err)
 		}
@@ -136,9 +136,20 @@ func TestBookingService_Confirm(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		repo := newStubBookingRepo()
 		svc := service.NewBookingService(repo)
-		_, err := svc.Confirm(ctx, "missing")
+		_, err := svc.Confirm(ctx, "missing", "cust-1")
 		if err != service.ErrBookingNotFound {
 			t.Errorf("expected ErrBookingNotFound, got %v", err)
+		}
+	})
+
+	t.Run("forbidden - requester bukan pemilik booking", func(t *testing.T) {
+		repo := newStubBookingRepo()
+		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
+		svc := service.NewBookingService(repo)
+
+		_, err := svc.Confirm(ctx, "b1", "cust-2")
+		if err != service.ErrForbidden {
+			t.Errorf("expected ErrForbidden, got %v", err)
 		}
 	})
 }
@@ -151,7 +162,7 @@ func TestBookingService_Complete(t *testing.T) {
 		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusConfirmed)
 		svc := service.NewBookingService(repo)
 
-		b, err := svc.Complete(ctx, "b1")
+		b, err := svc.Complete(ctx, "b1", "cust-1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -165,9 +176,20 @@ func TestBookingService_Complete(t *testing.T) {
 		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
 		svc := service.NewBookingService(repo)
 
-		_, err := svc.Complete(ctx, "b1")
+		_, err := svc.Complete(ctx, "b1", "cust-1")
 		if err != service.ErrNotConfirmed {
 			t.Errorf("expected ErrNotConfirmed, got %v", err)
+		}
+	})
+
+	t.Run("forbidden - requester bukan pemilik booking", func(t *testing.T) {
+		repo := newStubBookingRepo()
+		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusConfirmed)
+		svc := service.NewBookingService(repo)
+
+		_, err := svc.Complete(ctx, "b1", "cust-2")
+		if err != service.ErrForbidden {
+			t.Errorf("expected ErrForbidden, got %v", err)
 		}
 	})
 }
@@ -180,7 +202,7 @@ func TestBookingService_Cancel(t *testing.T) {
 		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
 		svc := service.NewBookingService(repo)
 
-		b, err := svc.Cancel(ctx, "b1")
+		b, err := svc.Cancel(ctx, "b1", "cust-1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -194,9 +216,60 @@ func TestBookingService_Cancel(t *testing.T) {
 		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusCompleted)
 		svc := service.NewBookingService(repo)
 
-		_, err := svc.Cancel(ctx, "b1")
+		_, err := svc.Cancel(ctx, "b1", "cust-1")
 		if err != service.ErrAlreadyFinalized {
 			t.Errorf("expected ErrAlreadyFinalized, got %v", err)
+		}
+	})
+
+	t.Run("forbidden - requester bukan pemilik booking", func(t *testing.T) {
+		repo := newStubBookingRepo()
+		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
+		svc := service.NewBookingService(repo)
+
+		_, err := svc.Cancel(ctx, "b1", "cust-2")
+		if err != service.ErrForbidden {
+			t.Errorf("expected ErrForbidden, got %v", err)
+		}
+	})
+}
+
+func TestBookingService_GetByID(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("pemilik (customer) boleh lihat", func(t *testing.T) {
+		repo := newStubBookingRepo()
+		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
+		svc := service.NewBookingService(repo)
+
+		b, err := svc.GetByID(ctx, "b1", "cust-1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if b.ID != "b1" {
+			t.Errorf("expected booking b1, got %s", b.ID)
+		}
+	})
+
+	t.Run("worker terkait juga boleh lihat", func(t *testing.T) {
+		repo := newStubBookingRepo()
+		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
+		svc := service.NewBookingService(repo)
+
+		_, err := svc.GetByID(ctx, "b1", "worker-1")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("forbidden - bukan pemilik maupun worker", func(t *testing.T) {
+		repo := newStubBookingRepo()
+		addBooking(repo, "b1", "cust-1", "worker-1", model.StatusPending)
+		svc := service.NewBookingService(repo)
+
+		_, err := svc.GetByID(ctx, "b1", "orang-lain")
+		if err != service.ErrForbidden {
+			t.Errorf("expected ErrForbidden, got %v", err)
 		}
 	})
 }

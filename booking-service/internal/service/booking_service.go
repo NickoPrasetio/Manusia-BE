@@ -12,6 +12,7 @@ var (
 	ErrNotPending       = errors.New("hanya booking PENDING yang bisa dikonfirmasi")
 	ErrNotConfirmed     = errors.New("hanya booking CONFIRMED yang bisa diselesaikan")
 	ErrAlreadyFinalized = errors.New("booking tidak bisa dibatalkan")
+	ErrForbidden        = errors.New("kamu bukan pemilik booking ini")
 )
 
 // BookingRepository is the persistence contract BookingService depends on —
@@ -79,18 +80,24 @@ func (s *BookingService) GetByWorker(ctx context.Context, workerID string) ([]mo
 	return bookings, nil
 }
 
-func (s *BookingService) GetByID(ctx context.Context, id string) (*model.Booking, error) {
+func (s *BookingService) GetByID(ctx context.Context, id, requesterID string) (*model.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, ErrBookingNotFound
 	}
+	if b.CustomerID != requesterID && b.WorkerID != requesterID {
+		return nil, ErrForbidden
+	}
 	return b, nil
 }
 
-func (s *BookingService) Confirm(ctx context.Context, id string) (*model.Booking, error) {
+func (s *BookingService) Confirm(ctx context.Context, id, requesterID string) (*model.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, ErrBookingNotFound
+	}
+	if b.CustomerID != requesterID {
+		return nil, ErrForbidden
 	}
 	if b.Status != model.StatusPending {
 		return nil, ErrNotPending
@@ -102,10 +109,13 @@ func (s *BookingService) Confirm(ctx context.Context, id string) (*model.Booking
 	return b, nil
 }
 
-func (s *BookingService) Complete(ctx context.Context, id string) (*model.Booking, error) {
+func (s *BookingService) Complete(ctx context.Context, id, requesterID string) (*model.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, ErrBookingNotFound
+	}
+	if b.CustomerID != requesterID {
+		return nil, ErrForbidden
 	}
 	if b.Status != model.StatusConfirmed {
 		return nil, ErrNotConfirmed
@@ -117,10 +127,13 @@ func (s *BookingService) Complete(ctx context.Context, id string) (*model.Bookin
 	return b, nil
 }
 
-func (s *BookingService) Cancel(ctx context.Context, id string) (*model.Booking, error) {
+func (s *BookingService) Cancel(ctx context.Context, id, requesterID string) (*model.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, ErrBookingNotFound
+	}
+	if b.CustomerID != requesterID {
+		return nil, ErrForbidden
 	}
 	if b.Status == model.StatusCompleted || b.Status == model.StatusCancelled {
 		return nil, ErrAlreadyFinalized
